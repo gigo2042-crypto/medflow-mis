@@ -60,7 +60,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 // Правка карточки и согласий. body: { lastName?, firstName?, middleName?, phone?, email?, birthDate?, gender?, notes?,
 //   marketingConsent?: boolean, pdConsent?: 'GIVEN_PAPER' | 'REVOKED' }
 export async function PATCH(req: NextRequest, ctx: Ctx) {
-  const g = await requirePerm(req, 'patients.manage')
+  const g = await requirePerm(req, 'patients.edit')
   if (!g.ok) return g.res
   const { id } = await ctx.params
   try {

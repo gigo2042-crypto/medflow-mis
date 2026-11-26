@@ -136,6 +136,21 @@ describe('политика 2FA', () => {
   })
 })
 
+describe('вход: пачка параллельных запросов', () => {
+  it('50 параллельных неверных паролей на один логин с одного IP → проверка пароля проходит не больше 5 раз', async () => {
+    await staff('mkt.burst', 'MARKETER', false)
+    const { POST } = await import('@/app/api/auth/login/route')
+    const rs = await Promise.all(
+      Array.from({ length: 50 }, (_, i) => POST(post('/api/auth/login', { login: 'mkt.burst', password: `wrong-${i}-xxxxxx` }, '192.0.2.50')))
+    )
+    const st = rs.map((r) => r.status)
+    expect(st.filter((x) => x === 401).length).toBeLessThanOrEqual(5)
+    expect(st.filter((x) => x === 429).length).toBeGreaterThanOrEqual(45)
+    // верный пароль с другого IP по-прежнему входит
+    expect((await POST(post('/api/auth/login', { login: 'mkt.burst', password: 'Fake-pass-12345' }, '192.0.2.51'))).status).toBe(200)
+  }, 60_000)
+})
+
 describe('блокировка входа по логину+IP', () => {
   it('5 неверных паролей с одного IP блокируют этот IP для логина, вход с другого IP работает; CLI unlock снимает', async () => {
     await staff('mkt.lock', 'MARKETER', false)

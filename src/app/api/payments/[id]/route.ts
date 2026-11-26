@@ -5,6 +5,7 @@ import { audit, requirePerm } from '@/lib/auth-server'
 import { isDemo } from '@/lib/config'
 import { FiscalError, fiscalizePayment } from '@/lib/fiscal-queue'
 import { fiscalStatus } from '@/lib/fiscal'
+import { refundRequiresIssuedReceipt } from '@/lib/cash'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,7 +59,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         return NextResponse.json({ error: 'Возврат по этой оплате уже оформлен' }, { status: 409 })
       }
       // Чек возврата прихода — только к пробитому чеку прихода (54-ФЗ)
-      if (payment.fiscalStatus !== 'ISSUED') {
+      const needIssued = refundRequiresIssuedReceipt(fiscalStatus().configured, isDemo())
+      if (needIssued && payment.fiscalStatus !== 'ISSUED') {
         const msg = payment.fiscalStatus === 'PENDING'
           ? 'Чек по оплате ещё в кассе — дождитесь результата, затем оформляйте возврат'
           : 'Чек по оплате не пробит — возврат невозможен. Отмените оплату (действие «Отменить»), она не уйдёт в кассу'
@@ -68,7 +70,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       try {
         refund = await db.$transaction(async (tx) => {
           // смена статуса и создание возврата — одной транзакцией; условие на статус — защита от гонки
-          const upd = await tx.payment.updateMany({ where: { id, type: 'PAYMENT', status: 'PAID', fiscalStatus: 'ISSUED' }, data: { status: 'CANCELED' } })
+          const upd = await tx.payment.updateMany({ where: { id, type: 'PAYMENT', status: 'PAID', ...(needIssued ? { fiscalStatus: 'ISSUED' } : {}) }, data: { status: 'CANCELED' } })
           if (upd.count !== 1) throw new RefundRace()
           return tx.payment.create({
             data: {

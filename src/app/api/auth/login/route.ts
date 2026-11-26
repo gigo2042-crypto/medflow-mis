@@ -47,9 +47,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Попытка по паре логин+IP засчитывается АТОМАРНО ДО проверки пароля: пачка параллельных запросов
+    // с разными паролями проходит проверку не более LOGIN_LIMIT раз (раньше все они успевали пройти
+    // isLocked до первой блокировки). Успешный вход сбрасывает счётчик ниже.
+    const attempt = await hit(userKey, LOGIN_LIMIT, WINDOW_MS, LOCK_MS)
+    if (!attempt.allowed) {
+      return NextResponse.json(
+        { error: `Слишком много неудачных попыток. Повторите через ${Math.max(1, Math.ceil(attempt.retryAfterSec / 60))} мин.` },
+        { status: 429 }
+      )
+    }
+
     const user = await db.staffUser.findUnique({ where: { login: key } })
     if (!user || !user.active || !(await verifyPassword(String(password), user.passwordHash))) {
-      await hit(userKey, LOGIN_LIMIT, WINDOW_MS, LOCK_MS)
       await hit(ipKey, IP_LIMIT, WINDOW_MS, LOCK_MS)
       await hit(acctKey, ACCOUNT_LIMIT, WINDOW_MS, LOCK_MS)
       await audit('auth.login_failed', user?.id ?? null, { login: key, ip })

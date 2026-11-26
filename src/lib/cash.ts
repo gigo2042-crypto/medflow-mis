@@ -55,3 +55,12 @@ export function parseClientKey(v: unknown): string | null {
 export function isUniqueViolation(e: unknown): boolean {
   return (e as { code?: string })?.code === 'P2002'
 }
+
+/**
+ * Нужен ли пробитый чек прихода для оформления возврата. В демо и при подключённой онлайн-кассе — да (54-ФЗ:
+ * чек возврата выбивается только к пробитому чеку). Если фискальный провайдер не подключён, чеки выбивает
+ * внешняя ККТ и статус в МИС не отслеживается (оплаты остаются QUEUED) — возврат оформляется записью в журнале.
+ */
+export function refundRequiresIssuedReceipt(fiscalConfigured: boolean, demo: boolean): boolean {
+  return demo || fiscalConfigured
+}

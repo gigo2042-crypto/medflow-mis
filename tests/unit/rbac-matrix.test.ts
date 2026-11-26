@@ -22,11 +22,14 @@ describe('матрица по умолчанию', () => {
   it('вкладки каждой роли — эталон', () => {
     for (const r of ROLES) expect(tabsOf(r), r).toEqual(EXPECTED_TABS[r])
   })
-  it('регистратор: нет интеграций, склада, правки/обезличивания карточек, ЭМК, виджета, медданных', () => {
+  it('регистратор: нет интеграций, склада, обезличивания карточек, ЭМК, виджета, медданных; правку контактов и согласий делает', () => {
     const p = permsOf('REGISTRAR')
     for (const x of ['integrations.read', 'integrations.manage', 'stock.read', 'stock.manage', 'patients.manage', 'medical.read', 'visits.write', 'settings.manage', 'reports.read', 'dashboard.read', 'notifications.read'] as const) expect(p, x).not.toContain(x)
     for (const t of ['emk', 'stock', 'integrations', 'widget']) expect(tabsOf('REGISTRAR')).not.toContain(t)
-    for (const x of ['schedule.read', 'appointments.create', 'patients.read', 'cash.pay'] as const) expect(p).toContain(x)
+    for (const x of ['schedule.read', 'appointments.create', 'patients.read', 'patients.edit', 'cash.pay'] as const) expect(p).toContain(x)
+    // обезличивание (необратимо) — только администратор
+    expect(permsOf('ADMIN')).toContain('patients.manage')
+    for (const r of ['DOCTOR', 'MARKETER', 'HEAD']) expect(permsOf(r), r).not.toContain('patients.edit')
   })
   it('маркетолог и руководитель — без ПДн и медданных', () => {
     for (const r of ['MARKETER', 'HEAD']) for (const x of ['patients.read', 'medical.read', 'visits.read', 'cash.read', 'integrations.read'] as const) expect(permsOf(r), `${r} ${x}`).not.toContain(x)

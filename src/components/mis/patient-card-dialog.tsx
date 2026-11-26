@@ -34,11 +34,14 @@ export default function PatientCardDialog({
   open,
   onOpenChange,
   onChanged,
+  canAnonymize = false,
 }: {
   patientId: string
   open: boolean
   onOpenChange: (v: boolean) => void
   onChanged?: () => void
+  /** patients.manage (только администратор): без права блок обезличивания не показывается */
+  canAnonymize?: boolean
 }) {
   const [card, setCard] = useState<Card | null>(null)
   const [form, setForm] = useState({ lastName: '', firstName: '', middleName: '', phone: '', email: '' })
@@ -204,6 +207,7 @@ export default function PatientCardDialog({
               </div>
             )}
 
+            {canAnonymize && (
             <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 space-y-2 text-sm">
               <div className="font-medium flex items-center gap-1 text-rose-700">
                 <ShieldAlert className="h-4 w-4" /> Обезличивание по требованию пациента
@@ -219,6 +223,7 @@ export default function PatientCardDialog({
                 </Button>
               </div>
             </div>
+            )}
           </div>
         )}
       </DialogContent>

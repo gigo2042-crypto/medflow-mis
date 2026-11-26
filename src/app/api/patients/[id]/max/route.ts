@@ -18,7 +18,7 @@ async function load(id: string) {
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const g = await requirePerm(req, 'patients.manage')
+  const g = await requirePerm(req, 'patients.edit')
   if (!g.ok) return g.res
   const { id } = await params
   const p = await load(id)
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 // action: SEND_INVITE — отправить пациенту ссылку-приглашение по SMS; UNLINK — снять привязку
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const g = await requirePerm(req, 'patients.manage')
+  const g = await requirePerm(req, 'patients.edit')
   if (!g.ok) return g.res
   const { id } = await params
   const p = await load(id)

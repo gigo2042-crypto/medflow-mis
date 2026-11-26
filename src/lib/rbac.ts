@@ -43,7 +43,8 @@ export type Perm =
   | 'campaigns.manage'
   | 'settings.manage'
   | 'medical.read' // врачебная тайна: жалобы, протоколы, диагнозы, результаты анализов, AI-сводка
-  | 'patients.manage' // правка карточки, отзыв согласия, обезличивание (152-ФЗ ст.14, 21)
+  | 'patients.edit' // правка контактных данных карточки, согласия и их отзыв, приглашение в MAX (152-ФЗ ст.14)
+  | 'patients.manage' // необратимые действия с карточкой: обезличивание (152-ФЗ ст.21) — только администратор
 
 const ALL_PERMS: Perm[] = [
   'patients.read',
@@ -84,6 +85,7 @@ const ALL_PERMS: Perm[] = [
   'campaigns.manage',
   'settings.manage',
   'medical.read',
+  'patients.edit',
   'patients.manage',
 ]
 
@@ -101,6 +103,7 @@ export const DEFAULT_ROLE_PERMS: Record<Role, Perm[]> = {
   REGISTRAR: [
     'patients.read', // карточка без медицинских полей (заметки, диагнозы — только medical.read)
     'patients.create',
+    'patients.edit', // исправить телефон/ФИО, оформить отзыв согласия по заявлению пациента
     'schedule.read',
     'appointments.create',
     'appointments.update',
@@ -147,7 +150,7 @@ export type RbacOverrides = Partial<Record<Role, { add?: string[]; remove?: stri
 
 const MEDICAL_PERMS: Perm[] = ['medical.read', 'ai.protocol', 'ai.summary', 'visits.write', 'labs.create']
 const MEDICAL_ROLES: Role[] = ['DOCTOR', 'ADMIN']
-const MARKETER_FORBIDDEN: Perm[] = ['patients.read', 'patients.create', 'patients.manage', 'visits.read', 'medical.read', 'integrations.read', 'integrations.manage', 'cash.read', 'docs.read', 'waitinglist.read', 'reminders.read', 'schedule.read', 'audit.read', 'sessions.read']
+const MARKETER_FORBIDDEN: Perm[] = ['patients.read', 'patients.create', 'patients.edit', 'patients.manage', 'visits.read', 'medical.read', 'integrations.read', 'integrations.manage', 'cash.read', 'docs.read', 'waitinglist.read', 'reminders.read', 'schedule.read', 'audit.read', 'sessions.read']
 
 /** Разбор и проверка RBAC_OVERRIDES. Бросает Error с понятным текстом. */
 export function parseRbacOverrides(raw: string | undefined | null): RbacOverrides {

@@ -33,7 +33,7 @@ export default function Registratura({ me, onOpenVisit }: Props) {
   const canBook = can(me, 'appointments.create')
   const canUpdate = can(me, 'appointments.update')
   const canStartVisit = can(me, 'visits.write')
-  const canManagePatient = can(me, 'patients.manage')
+  const canManagePatient = can(me, 'patients.edit')
   const [cardOpen, setCardOpen] = useState(false)
   const [doctors, setDoctors] = useState<DoctorLite[]>([])
   const [rescheduleTarget, setRescheduleTarget] = useState<RescheduleTarget | null>(null)
@@ -256,7 +256,7 @@ export default function Registratura({ me, onOpenVisit }: Props) {
                 </Button>
               </div>
               {canManagePatient && (
-                <PatientCardDialog patientId={patient.id} open={cardOpen} onOpenChange={setCardOpen} onChanged={() => setPatient(null)} />
+                <PatientCardDialog canAnonymize={can(me, 'patients.manage')} patientId={patient.id} open={cardOpen} onOpenChange={setCardOpen} onChanged={() => setPatient(null)} />
               )}
             </div>
           ) : (
