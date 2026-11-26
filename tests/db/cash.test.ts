@@ -1,7 +1,7 @@
 // © 2026 Tony Genenncher. Все права защищены. Исходный код доступен только для просмотра — см. LICENSE.
 // Чек-лист P0 «Касса» (54-ФЗ). Только фейковые данные; живых вызовов АТОЛ нет (касса не настроена / демо-режим).
 //  • два одновременных POST на один визит → одна оплата; повтор с тем же clientKey → та же оплата;
-//  • возврат неотправленного чека → отказ; отмена неотправленной оплаты; возврат в транзакции, P2002 → 409;
+//  • возврат неотправленного чека при подключённой кассе → 409; без провайдера в production — запись возврата; отмена неотправленной оплаты; возврат в транзакции, P2002 → 409;
 //  • валидация сумм (NaN/Infinity/строки/дроби/пределы); лимит скидки и одноразовый код администратора с аудитом.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { authed, makeDoctor, makePatient, makeVisit, productionEnv, resetDb, staffSession, useTestDb } from './helpers'
@@ -9,11 +9,25 @@ import { authed, makeDoctor, makePatient, makeVisit, productionEnv, resetDb, sta
 useTestDb()
 let db: Awaited<ReturnType<typeof resetDb>>
 
+// Фейковые реквизиты АТОЛ — как в tests/unit/fiscal-clinic.test.ts; живой кассы нет.
+const ATOL_CONNECTED = {
+  FISCAL_PROVIDER: 'atol',
+  ATOL_LOGIN: 'fake-login',
+  ATOL_PASSWORD: 'fake-pass',
+  ATOL_GROUP_CODE: 'fake-group',
+  ATOL_SNO: 'usn_income',
+  ATOL_PAYMENT_ADDRESS: 'https://clinic.example',
+  ATOL_COMPANY_EMAIL: 'kassa@clinic.example',
+  ATOL_BASE_URL: 'https://atol.mock/possystem/v5',
+  CLINIC_INN: '7700000000',
+}
+
 beforeEach(async () => {
   db = await resetDb()
   productionEnv()
   delete process.env.DISCOUNT_MAX_PERCENT
   delete process.env.PAYMENT_MAX_RUB
+  for (const k of Object.keys(ATOL_CONNECTED)) delete process.env[k]
   vi.restoreAllMocks()
 })
 
@@ -65,6 +79,7 @@ describe('идемпотентность оплаты', () => {
 
 describe('возврат только по пробитому чеку', () => {
   it('возврат неотправленного чека → 409 NOT_FISCALIZED; отмена → CANCELED, в кассу не уходит', async () => {
+    productionEnv(ATOL_CONNECTED)
     const { patient, reg, admin } = await setup()
     const p = (await pay(reg.cookie, { patientId: patient.id, amount: 1000 })).json.payment
     const r = await patch(admin.cookie, p.id, 'refund')
@@ -82,6 +97,13 @@ describe('возврат только по пробитому чеку', () => {
     const f = await patch(admin.cookie, p.id, 'fiscalize')
     expect(f.status).toBe(409)
     expect(await db.auditLog.count({ where: { action: 'payment.canceled' } })).toBe(1)
+  })
+  it('без провайдера в production возврат по непробитому чеку → 201 и запись возврата создаётся', async () => {
+    const { patient, reg, admin } = await setup()
+    const p = (await pay(reg.cookie, { patientId: patient.id, amount: 1000 })).json.payment
+    const r = await patch(admin.cookie, p.id, 'refund')
+    expect(r.status).toBe(201)
+    expect(await db.payment.count({ where: { type: 'REFUND', refundOfId: p.id } })).toBe(1)
   })
   it('регистратор не отменяет и не возвращает (cash.refund только у администратора)', async () => {
     const { patient, reg } = await setup()
