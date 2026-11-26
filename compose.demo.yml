@@ -1,0 +1,101 @@
+# MedFlow — демо-стенд для показа (отдельно от production).
+#   cp .env.demo.example .env.demo  &&  docker compose -f compose.demo.yml --env-file .env.demo up -d --build
+# Всё внутри: Postgres с демо-данными, мок-почта, учебный SSO-провайдер, SMS — заглушка.
+# Наружу ничего не отправляется. Сброс данных — ежедневно (DEMO_RESET_AT) и кнопкой в баннере.
+name: medflow-demo
+
+x-demo-env: &demo-env
+  env_file: .env.demo
+  environment:
+    APP_MODE: demo
+    DATABASE_URL: postgresql://medflow:${POSTGRES_PASSWORD:-demo-db-password}@postgres:5432/medflow_demo
+    APP_INTERNAL_URL: http://app:3000
+    EMAIL_PROVIDER_URL: http://email-provider:3040
+    OIDC_DISCOVERY_URL: http://sso-idp:3041/.well-known/openid-configuration
+    SMS_PROVIDER: none
+    LLM_PROVIDER: none
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: medflow_demo
+      POSTGRES_USER: medflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-demo-db-password}
+    volumes: [demo_pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medflow -d medflow_demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  seed:
+    build: { context: ., target: tools, args: { APP_MODE: demo } }
+    image: medflow-demo-tools:latest
+    <<: *demo-env
+    depends_on:
+      postgres: { condition: service_healthy }
+    command: ["sh", "-c", "npx prisma migrate deploy && npm run demo:seed"]
+    restart: "no"
+
+  app:
+    build: { context: ., target: runner, args: { APP_MODE: demo } }
+    image: medflow-demo:latest
+    <<: *demo-env
+    restart: unless-stopped
+    depends_on:
+      seed: { condition: service_completed_successfully }
+    expose: ["3000"]
+
+  scheduler:
+    build: { context: ., target: runner, args: { APP_MODE: demo } }
+    image: medflow-demo:latest
+    <<: *demo-env
+    restart: unless-stopped
+    depends_on:
+      app: { condition: service_healthy }
+    command: ["node", "scripts/scheduler.mjs"]
+
+  email-provider:
+    image: node:24-alpine
+    restart: unless-stopped
+    working_dir: /svc
+    env_file: .env.demo
+    environment:
+      EMAIL_PROVIDER_PORT: "3040"
+      EMAIL_PROVIDER_DATA_DIR: /data
+      MIS_URL: ${DEMO_PUBLIC_URL:-http://localhost:8080}
+    volumes:
+      - ./mini-services/email-provider:/svc:ro
+      - demo_mail:/data
+    command: ["node", "index.ts"]
+    ports: ["127.0.0.1:8025:3040"]   # консоль писем (Basic-auth EMAIL_CONSOLE_PASSWORD), только локально
+
+  sso-idp:
+    image: node:24-alpine
+    restart: unless-stopped
+    working_dir: /svc
+    env_file: .env.demo
+    environment:
+      IDP_PORT: "3041"
+      IDP_INTERNAL_URL: http://sso-idp:3041
+    volumes: ["./mini-services/sso-idp:/svc:ro"]
+    command: ["node", "index.mjs"]
+    ports: ["${IDP_PUBLISH:-127.0.0.1:3041}:3041"]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    ports: ["${DEMO_HTTP_PUBLISH:-8080}:80", "${DEMO_HTTPS_PUBLISH:-8443}:443"]
+    environment:
+      DEMO_SITE: ${DEMO_SITE:-:80}
+    volumes:
+      - ./deploy/Caddyfile.demo:/etc/caddy/Caddyfile:ro
+      - demo_caddy_data:/data
+
+volumes:
+  demo_pgdata:
+  demo_mail:
+  demo_caddy_data:

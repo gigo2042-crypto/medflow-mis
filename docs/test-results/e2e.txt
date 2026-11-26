@@ -1,0 +1,19 @@
+OK    config  — mode=production
+OK    врач: требуется 2FA  — method=TOTP
+OK    врач: вход  — HTTP 200
+OK    врач: me  — role=DOCTOR
+OK    front: требуется 2FA  — method=TOTP
+OK    front: вход  — HTTP 200
+OK    front: me  — role=REGISTRAR
+OK    врачи  — 4
+OK    пациент создан  — MF-1013
+OK    запись создана  — 2026-11-27T07:00:00.000Z
+OK    перенос записи  — HTTP 200  → 2026-11-27T08:00:00.000Z
+OK    приём начат  — HTTP 201 
+OK    приём завершён  — HTTP 200 
+OK    завершённый приём не редактируется  — HTTP 409
+OK    оплата  — HTTP 201 сумма=2200 статус=PAID
+OK    врач: выход
+OK    front: выход
+
+ИТОГ: цепочка пройдена

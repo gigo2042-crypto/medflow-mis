@@ -1,0 +1,23 @@
+# Production: автоматический HTTPS (Let's Encrypt) для домена из MEDFLOW_DOMAIN.
+# Наружу открыто только приложение; служебных портов и XTransformPort нет.
+# ACME_EMAIL обязателен (в compose — проверка ${ACME_EMAIL:?}): без аргумента директива email не парсится.
+{
+	email {$ACME_EMAIL}
+}
+
+{$MEDFLOW_DOMAIN} {
+	# Ограничение размера тела запроса (чек-лист P1): JSON API МИС укладывается в сотни КБ;
+	# больше — отказ 413 до приложения. Переопределение: MEDFLOW_MAX_BODY в .env (например 20MB).
+	request_body {
+		max_size {$MEDFLOW_MAX_BODY:10MB}
+	}
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	# /api/metrics — только изнутри (Prometheus в той же сети ходит на app:3000 напрямую)
+	@metrics path /api/metrics
+	respond @metrics 404
+	reverse_proxy app:3000
+}

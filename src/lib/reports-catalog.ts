@@ -1,0 +1,43 @@
+// © 2026 Tony Genenncher. Все права защищены. Исходный код доступен только для просмотра — см. LICENSE.
+import { ReportsCatalog } from '@/lib/types'
+
+// Каталог отчётности ОТЧ-01…36 (ТЗ, глава 9): реализованные в демо-стенде
+// + запланированные этапы v2/v3 (серым в UI)
+export const CATALOG: ReportsCatalog = [
+  { code: 'ОТЧ-01', name: 'Загрузка врачей (план-факт занятости)', section: 'operations', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-02', name: 'Средняя длительность приёма по врачам', section: 'operations', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-03', name: 'No-show и отмены по врачам', section: 'operations', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-04', name: 'Конверсия записей в визиты', section: 'operations', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-05', name: 'Конверсия обращений в записи', section: 'marketing', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-06', name: 'Источники первичных обращений', section: 'marketing', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-07', name: 'Лист ожидания: пополнение и конверсия', section: 'operations', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-08', name: 'Новые и повторные пациенты', section: 'patients', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-09', name: 'Когортный retention пациентов', section: 'patients', stage: 'v2', implemented: false },
+  { code: 'ОТЧ-10', name: 'Отток пациентов', section: 'patients', stage: 'v2', implemented: false },
+  { code: 'ОТЧ-11', name: 'LTV по когортам и источникам', section: 'patients', stage: 'v3', implemented: false },
+  { code: 'ОТЧ-12', name: 'Демография пациентской базы', section: 'patients', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-13', name: 'Пациенты по диагнозам МКБ-10', section: 'compliance', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-14', name: 'Выручка по клинике', section: 'finance', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-15', name: 'Выручка по врачам', section: 'finance', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-16', name: 'Выручка по услугам', section: 'finance', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-17', name: 'Средний чек и его динамика', section: 'finance', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-18', name: 'Взаиморасчёты с пациентами', section: 'finance', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-19', name: 'Взаиморасчёты с ДМС', section: 'finance', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-20', name: 'Реестр оказанных услуг', section: 'finance', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-21', name: 'Кассовый отчёт (X-сводка)', section: 'finance', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-22', name: 'Журнал платежей и возвратов', section: 'finance', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-23', name: 'Складские остатки', section: 'stock', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-24', name: 'Движение ТМЦ', section: 'stock', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-25', name: 'Расход материалов на визит (себестоимость)', section: 'stock', stage: 'v2', implemented: true },
+  { code: 'ОТЧ-26', name: 'Выработка и мотивация врачей', section: 'staff', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-27', name: 'Эффективность рассылок', section: 'marketing', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-28', name: 'ROI и CAC маркетинговых каналов', section: 'marketing', stage: 'v2', implemented: false },
+  { code: 'ОТЧ-29', name: 'Отзывы и NPS', section: 'marketing', stage: 'v2', implemented: false },
+  { code: 'ОТЧ-30', name: 'Продажи по позициям прайс-листа', section: 'finance', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-31', name: 'Аудит действий пользователей', section: 'compliance', stage: 'MVP', implemented: true },
+  { code: 'ОТЧ-32', name: 'Активные сессии и лицензии', section: 'compliance', stage: 'MVP', implemented: true },
+  { code: 'ОТЧ-33', name: 'Журнал обращений к ПДн', section: 'compliance', stage: 'v1', implemented: true },
+  { code: 'ОТЧ-34', name: 'Прогноз загрузки врачей на 14 дней', section: 'predictive', stage: 'v2', implemented: true },
+  { code: 'ОТЧ-35', name: 'Прогноз выручки на 30 дней', section: 'predictive', stage: 'v2', implemented: true },
+  { code: 'ОТЧ-36', name: 'Список риска оттока', section: 'predictive', stage: 'v2', implemented: true },
+]

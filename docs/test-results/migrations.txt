@@ -1,0 +1,36 @@
+== 2026-11-26 09:35:16 MSK HEAD be962f2
+== 1. Пустая БД
+NOTICE:  database "mf_mig_empty_test" does not exist, skipping
+13 migrations found in prisma/migrations
+The following migration(s) have been applied:
+migrations/
+All migrations have been successfully applied.
+13 миграций применено
+== 2. Копия mf_rbac_prod (данные v2)
+NOTICE:  database "mf_rbac_prod_mig" does not exist, skipping
+ERROR:  relation "Document" does not exist
+LINE 1: select count(*) from "Document"
+                             ^
+до:    Patient=12 Appointment=218 Visit=163 Payment=0 AuditLog=52 StaffUser=9 ConsentRecord=0 Document= 
+миграций до: 9
+13 migrations found in prisma/migrations
+The following migration(s) have been applied:
+migrations/
+All migrations have been successfully applied.
+ERROR:  relation "Document" does not exist
+LINE 1: select count(*) from "Document"
+                             ^
+после: Patient=12 Appointment=218 Visit=163 Payment=0 AuditLog=52 StaffUser=9 ConsentRecord=0 Document= 
+миграций после: 13
+СТРОКИ СОВПАДАЮТ
+card seq: 1012 max карта: MF-1012
+триггер аудита: 2
+DELETE из AuditLog — отказ (ок)
+== 3. Схема = миграции
+-- This is an empty migration.
+
+== 4. Только добавляющие миграции после d8f58c4
+prisma/migrations/20261126090000_cash_integrity/migration.sql: 0 опасных операторов
+prisma/migrations/20261126091000_patient_card_seq/migration.sql: 0 опасных операторов
+prisma/migrations/20261126092000_link_revocation/migration.sql: 0 опасных операторов
+prisma/migrations/20261126093000_audit_immutable/migration.sql: 0 опасных операторов

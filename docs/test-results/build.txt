@@ -1,0 +1,95 @@
+
+> medflow@0.3.0 build
+> prisma generate && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/
+
+Prisma schema loaded from prisma/schema.prisma
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 239ms
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+
+▲ Next.js 16.4.6 (Turbopack)
+✓ Running next.config.ts took 33ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 4.2s
+  Running TypeScript ...
+  Finished TypeScript in 8.6s ...
+  Collecting page data using 7 workers ...
+  Generating static pages using 7 workers (0/3) ...
+✓ Generating static pages using 7 workers (3/3) in 144ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ƒ /_not-found
+├ ƒ /api/ai/protocol
+├ ƒ /api/ai/summary
+├ ƒ /api/appointments
+├ ƒ /api/appointments/[id]
+├ ƒ /api/audit
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/auth/me
+├ ƒ /api/auth/oidc/callback
+├ ƒ /api/auth/oidc/login
+├ ƒ /api/auth/verify
+├ ƒ /api/campaigns
+├ ƒ /api/config
+├ ƒ /api/dashboard
+├ ƒ /api/demo/accounts
+├ ƒ /api/demo/reset
+├ ƒ /api/doc-templates
+├ ƒ /api/doc-templates/render
+├ ƒ /api/doctors
+├ ƒ /api/doctors/[id]
+├ ƒ /api/documents
+├ ƒ /api/health
+├ ƒ /api/icd
+├ ƒ /api/integrations
+├ ƒ /api/integrations/1c
+├ ƒ /api/integrations/1c/[id]
+├ ƒ /api/integrations/email/webhook
+├ ƒ /api/integrations/max/webhook
+├ ƒ /api/metrics
+├ ƒ /api/no-show-risks
+├ ƒ /api/notifications
+├ ƒ /api/patients
+├ ƒ /api/patients/[id]
+├ ƒ /api/patients/[id]/max
+├ ƒ /api/payments
+├ ƒ /api/payments/[id]
+├ ƒ /api/payments/discount-approvals
+├ ƒ /api/payments/fiscal
+├ ƒ /api/public/patient-link
+├ ƒ /api/reminder-rules
+├ ƒ /api/reminders
+├ ƒ /api/reports
+├ ƒ /api/reports/scheduler
+├ ƒ /api/reports/scheduler/tick
+├ ƒ /api/schedule
+├ ƒ /api/schedule/exceptions
+├ ƒ /api/services
+├ ƒ /api/services/[id]
+├ ƒ /api/sessions
+├ ƒ /api/sessions/[id]
+├ ƒ /api/staff
+├ ƒ /api/stock
+├ ƒ /api/templates
+├ ƒ /api/visits
+├ ƒ /api/visits/[id]
+├ ƒ /api/waiting-list
+├ ƒ /api/waiting-list/[id]
+├ ƒ /api/waiting-list/[id]/accept
+├ ƒ /api/waiting-list/[id]/decline
+├ ƒ /api/widget
+├ ƒ /book
+└ ƒ /r/[token]
+
+
+ƒ Proxy (Middleware)
+
+ƒ  (Dynamic)  server-rendered on demand
+

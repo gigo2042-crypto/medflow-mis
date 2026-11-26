@@ -1,0 +1,10 @@
+# Демо-стенд. DEMO_SITE: домен (HTTPS автоматически) или ":80" для локального показа.
+{$DEMO_SITE::80} {
+	request_body {
+		max_size {$MEDFLOW_MAX_BODY:10MB}
+	}
+	encode zstd gzip
+	@metrics path /api/metrics
+	respond @metrics 404
+	reverse_proxy app:3000
+}

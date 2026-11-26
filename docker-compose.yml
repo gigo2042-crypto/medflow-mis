@@ -1,0 +1,176 @@
+# MedFlow — production.
+#   Свой сервер (всё в одном):  COMPOSE_PROFILES=localdb  в .env  → postgres + ежедневные бэкапы
+#   Облако с управляемой БД:     COMPOSE_PROFILES не задан, DATABASE_URL — внешний (Managed PostgreSQL)
+# Первый администратор:  docker compose run --rm tools npm run cli -- create-admin --login admin --name "…"
+name: medflow
+
+x-app-env: &app-env
+  env_file: .env
+  environment:
+    APP_MODE: production
+    DATABASE_URL: ${DATABASE_URL:-postgresql://medflow:${POSTGRES_PASSWORD:-}@postgres:5432/medflow}
+    APP_INTERNAL_URL: http://app:3000
+
+# Харденинг контейнеров (чек-лист P1): без capabilities, без повышения привилегий, корень ФС только
+# для чтения (запись — tmpfs и тома), лимиты CPU/памяти. Лимиты переопределяются в .env.
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    profiles: [localdb]
+    restart: unless-stopped
+    <<: *hardening
+    # entrypoint образа меняет владельца каталога данных и переключается на пользователя postgres
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /var/run/postgresql:size=8m,uid=70,gid=70,mode=2775
+    shm_size: 256m
+    deploy:
+      resources:
+        limits: { cpus: "${PG_CPUS:-2}", memory: "${PG_MEMORY:-2g}" }
+    environment:
+      POSTGRES_DB: medflow
+      POSTGRES_USER: medflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+      TZ: ${CLINIC_TZ:-Europe/Moscow}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medflow -d medflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backup:
+    # pg_dump → AES-256 (openssl) → ./backups [+ S3]; незашифрованные бэкапы не создаются
+    build: { context: ., dockerfile: deploy/backup.Dockerfile }
+    image: medflow-backup:latest
+    profiles: [localdb]
+    restart: unless-stopped
+    <<: *hardening
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: "${BACKUP_MEMORY:-1g}" }
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      PGHOST: postgres
+      PGUSER: medflow
+      PGDATABASE: medflow
+      PGPASSWORD: ${POSTGRES_PASSWORD:-}
+      TZ: ${CLINIC_TZ:-Europe/Moscow}
+      BACKUP_AT: ${BACKUP_AT:-03:30}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_PASSPHRASE_FILE: /run/secrets/backup_passphrase
+      # Копия вне сервера обязательна: без BACKUP_S3_BUCKET бэкап считается неудачным
+      # (осознанный отказ — BACKUP_ALLOW_LOCAL_ONLY=1, например на время пусконаладки)
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_ALLOW_LOCAL_ONLY: ${BACKUP_ALLOW_LOCAL_ONLY:-}
+      HOME: /tmp
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      AWS_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${BACKUP_S3_REGION:-ru-central1}
+      BACKUP_VERIFY: ${BACKUP_VERIFY:-1}
+      BACKUP_HEALTHCHECK_URL: ${BACKUP_HEALTHCHECK_URL:-}
+      BACKUP_ALERT_URL: ${BACKUP_ALERT_URL:-}
+    secrets: [backup_passphrase]
+    volumes:
+      - ./backups:/backups
+
+  migrate:
+    build: { context: ., target: tools, args: { APP_MODE: production } }
+    image: medflow-tools:latest
+    <<: [*app-env, *hardening]
+    environment:
+      APP_MODE: production
+      DATABASE_URL: ${DATABASE_URL_MIGRATE:-${DATABASE_URL:-postgresql://medflow:${POSTGRES_PASSWORD:-}@postgres:5432/medflow}}
+      HOME: /tmp
+      npm_config_cache: /tmp/.npm
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: "1g" }
+    depends_on:
+      postgres: { condition: service_healthy, required: false }
+    command: ["npx", "prisma", "migrate", "deploy"]
+    restart: "no"
+
+  app:
+    build: { context: ., target: runner, args: { APP_MODE: production } }
+    image: medflow:latest
+    <<: [*app-env, *hardening]
+    restart: unless-stopped
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      # кэш Next.js (ISR/изображения) — в памяти, корень образа только для чтения
+      - /app/.next/cache:size=256m,mode=1777
+    deploy:
+      resources:
+        limits: { cpus: "${APP_CPUS:-2}", memory: "${APP_MEMORY:-1g}" }
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    expose: ["3000"]
+
+  scheduler:
+    build: { context: ., target: runner, args: { APP_MODE: production } }
+    image: medflow:latest
+    <<: [*app-env, *hardening]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: "256m" }
+    depends_on:
+      app: { condition: service_healthy }
+    command: ["node", "scripts/scheduler.mjs"]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    <<: *hardening
+    cap_add: [NET_BIND_SERVICE] # порты 80/443
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: "256m" }
+    depends_on: [app]
+    ports: ["80:80", "443:443"]
+    environment:
+      MEDFLOW_DOMAIN: ${MEDFLOW_DOMAIN:?задайте MEDFLOW_DOMAIN в .env}
+      ACME_EMAIL: ${ACME_EMAIL:?задайте ACME_EMAIL в .env (уведомления Let's Encrypt)}
+      MEDFLOW_MAX_BODY: ${MEDFLOW_MAX_BODY:-10MB}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # Утилиты: docker compose run --rm tools npm run cli -- <команда>
+  tools:
+    build: { context: ., target: tools, args: { APP_MODE: production } }
+    image: medflow-tools:latest
+    profiles: [tools]
+    <<: *app-env
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      postgres: { condition: service_healthy, required: false }
+    command: ["npm", "run", "cli"]
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+
+secrets:
+  # Ключевая фраза шифрования бэкапов: создайте файл (chmod 600) и храните его копию ВНЕ сервера —
+  # без неё бэкапы не расшифровать. Генерация: openssl rand -base64 32 > secrets/backup_passphrase
+  backup_passphrase:
+    file: ./secrets/backup_passphrase

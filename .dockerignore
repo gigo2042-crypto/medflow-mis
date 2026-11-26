@@ -1,0 +1,17 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+!.env.demo.example
+*.db
+*.db-journal
+*.log
+backups
+db
+mini-services/email-provider/data
+screenshots
+tsconfig.tsbuildinfo
+download
+secrets

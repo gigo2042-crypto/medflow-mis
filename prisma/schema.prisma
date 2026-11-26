@@ -1,0 +1,840 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ Картотека ============
+
+model Patient {
+  id         String     @id @default(cuid())
+  cardNumber String     @unique
+  lastName   String
+  firstName  String
+  middleName String?
+  phone      String
+  email      String? // транзакционные письма (ИНТ-014)
+  birthDate  DateTime?
+  gender     String     @default("F") // F | M
+  notes      String?
+  marketingConsent Boolean @default(false) // согласие на рекламные рассылки (38-ФЗ ст.18)
+  marketingConsentAt DateTime? // когда дано/отозвано последнее решение по рекламе
+  // Согласие на обработку ПДн (152-ФЗ ст.9, для данных о здоровье — ст.10): дата, версия текста, источник
+  pdConsentAt      DateTime?
+  pdConsentVersion String?
+  pdConsentSource  String? // WIDGET | REGISTRAR | PAPER | MIGRATION
+  pdConsentRevokedAt DateTime?
+  // Обезличивание по требованию субъекта (152-ФЗ ст.21): ФИО/контакты стёрты,
+  // медицинская документация остаётся (хранение по 323-ФЗ) без идентификаторов
+  anonymizedAt     DateTime?
+  // Мессенджер MAX: бот может писать только тем, кто сам запустил его (bot_started);
+  // user_id приходит в вебхуке после перехода пациента по ссылке-приглашению
+  maxUserId   String?   @unique
+  maxLinkedAt DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  consents   ConsentRecord[]
+  appointments Appointment[]
+  visits     Visit[]
+  payments   Payment[]
+  documents  SignedDocument[]
+  waitingEntries WaitingListEntry[]
+  policies    InsurancePolicy[]
+}
+
+model Doctor {
+  id          String  @id @default(cuid())
+  name        String
+  specialty   String
+  color       String  @default("emerald") // акцент расписания
+  workStart   String  @default("09:00")
+  workEnd     String  @default("18:00")
+  slotMinutes Int     @default(30)
+  workDays    String  @default("1111100") // Пн..Вс: 1 — рабочий день
+  appointments Appointment[]
+  scheduleExceptions ScheduleException[]
+  visits      Visit[]
+  waitingEntries        WaitingListEntry[] @relation("WaitingDoctor")
+  waitingOfferedEntries WaitingListEntry[] @relation("WaitingOfferedDoctor")
+  staffUser   StaffUser?
+}
+
+// ============ Запись и приёмы ============
+
+model Appointment {
+  id        String   @id @default(cuid())
+  patientId String
+  doctorId  String
+  start     DateTime
+  duration  Int      @default(30)
+  status    String   @default("BOOKED") // BOOKED | CONFIRMED | ARRIVED | DONE | CANCELED | NO_SHOW
+  source    String   @default("REGISTRAR") // REGISTRAR | WIDGET | PHONE
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [id])
+  doctor  Doctor  @relation(fields: [doctorId], references: [id])
+  visit   Visit?
+  waitingEntry WaitingListEntry?
+  reminders Reminder[]
+
+  // Точка улучшения №6: защита от двойной брони на уровне БД
+  // Один активный приём на слот врача: частичный уникальный индекс
+  // "Appointment_active_slot_key" (WHERE status NOT IN ('CANCELED','NO_SHOW')) создан SQL-миграцией —
+  // Prisma не описывает частичные индексы. Отменённые/неявки остаются в истории и не держат слот.
+  @@index([doctorId, start])
+  @@index([patientId])
+  @@index([start])
+}
+
+model Visit {
+  id            String   @id @default(cuid())
+  appointmentId String   @unique
+  patientId     String
+  doctorId      String
+  templateId    String?
+  complaints    String?
+  diagnosisCode String?
+  diagnosisName String?
+  protocolText  String?
+  templateData  String? // JSON-выбор врача в интерактивном шаблоне
+  aiUsed        Boolean  @default(false)
+  price         Int      @default(0) // руб., из прайса ServiceItem
+  serviceId     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  service     ServiceItem? @relation(fields: [serviceId], references: [id])
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
+  patient     Patient     @relation(fields: [patientId], references: [id])
+  doctor      Doctor      @relation(fields: [doctorId], references: [id])
+  template    ProtocolTemplate? @relation(fields: [templateId], references: [id])
+  payments    Payment[]
+  documents   SignedDocument[]
+  egiszDocuments EgiszDocument[]
+  labReferrals  LabReferral[]
+
+  @@index([patientId])
+}
+
+// ============ Шаблоны протоколов (точка улучшения №2) ============
+
+model ProtocolTemplate {
+  id         String  @id @default(cuid())
+  name       String
+  specialty  String
+  type       String  @default("INTERACTIVE") // INTERACTIVE | TEXT
+  schemaJson String // JSON-схема интерактивного шаблона
+  visits     Visit[]
+}
+
+// ============ Concurrent-лицензирование (точка улучшения №5) ============
+
+model StaffUser {
+  id           String        @id @default(cuid())
+  login        String        @unique // логин для входа (РД-017)
+  name         String
+  role         String        @default("REGISTRAR") // ADMIN | REGISTRAR | DOCTOR | MARKETER | HEAD
+  passwordHash String?       // scrypt с солью (РД-017)
+  email      String?         // письма сотрудникам (ИНТ-014)
+  ssoSubject String? @unique // sub в корпоративном IdP: единый вход OIDC (ИНТ-013)
+  phone        String?
+  active       Boolean       @default(true)
+  // Привязка учётной записи врача к карточке врача: правка визитов только своих (RBAC)
+  doctorId     String?       @unique
+  doctor       Doctor?       @relation(fields: [doctorId], references: [id])
+  // TOTP-2FA (RFC 6238): секрет base32, включается после подтверждения кода
+  totpSecret   String?
+  totpEnabled  Boolean       @default(false)
+  sessions     WorkSession[]
+  payments     Payment[]     @relation("StaffPayments")
+  documents    SignedDocument[] @relation("StaffDocuments")
+  auditLogs    AuditLog[]
+  authSessions AuthSession[]
+  pendingLogins PendingLogin[]
+}
+
+model WorkSession {
+  id           String   @id @default(cuid())
+  userId       String
+  device       String   @default("web")
+  startedAt    DateTime @default(now())
+  lastActivity DateTime @default(now())
+  status       String   @default("ACTIVE") // ACTIVE | RELEASED
+  releaseBy    String? // AUTO_IDLE | ADMIN | USER
+
+  user StaffUser @relation(fields: [userId], references: [id])
+
+  @@index([status])
+}
+
+// ============ Деньги: прейскурант и касса (ФТ-006, ФТ-007) ============
+
+model ServiceItem {
+  id              String   @id @default(cuid())
+  name            String
+  category        String   @default("Услуги")
+  price           Int // рублей
+  durationMinutes Int      @default(30)
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  waitingEntries WaitingListEntry[]
+  visits         Visit[]
+}
+
+model Payment {
+  id           String    @id @default(cuid())
+  patientId    String
+  visitId      String?
+  amount       Int // руб.; возврат — отрицательный
+  method       String    @default("CARD") // CASH | CARD | SBP
+  type         String    @default("PAYMENT") // PAYMENT | REFUND
+  status       String    @default("PAID") // PAID | CANCELED
+  fiscalStatus String    @default("QUEUED") // QUEUED | PENDING | ISSUED | ERROR — фискализация 54-ФЗ (ФТ-006)
+  fiscalNumber String?
+  fiscalAt     DateTime?
+  fiscalUuid   String? // uuid документа в облачной кассе (АТОЛ Онлайн)
+  fiscalError  String?
+  fiscalReceiptUrl String? // ссылка на чек на сайте ОФД, если вернулась
+  itemsJson    String? // JSON: [{name, price, qty}] — состав чека
+  discount     Int       @default(0) // скидка, руб. — печатается отдельной строкой
+  note         String?
+  refundOfId   String?   @unique
+  createdById  String?
+  // ключ идемпотентности от клиента; кроме того "Payment_active_visit_payment_key" (одна действующая
+  // оплата на приём: WHERE type='PAYMENT' AND status='PAID' AND visitId IS NOT NULL) создан SQL-миграцией
+  clientKey    String?   @unique
+  discountApprovalId String? // подтверждение администратора для скидки сверх лимита роли
+  createdAt    DateTime  @default(now())
+
+  patient   Patient    @relation(fields: [patientId], references: [id])
+  visit     Visit?     @relation(fields: [visitId], references: [id])
+  createdBy StaffUser? @relation("StaffPayments", fields: [createdById], references: [id])
+  refundOf  Payment?   @relation("PaymentRefund", fields: [refundOfId], references: [id])
+  refunds   Payment[]  @relation("PaymentRefund")
+
+  @@index([createdAt])
+  @@index([patientId])
+}
+
+// ============ Документы и печатные формы (ФТ-009) ============
+
+// Одноразовое подтверждение администратором скидки сверх лимита роли (чек-лист P0 «Касса»)
+model DiscountApproval {
+  id          String    @id @default(cuid())
+  code        String    @unique // короткий код, который администратор сообщает кассиру
+  patientId   String
+  maxDiscount Int // руб.
+  reason      String?
+  createdById String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  usedById    String?
+  paymentId   String?
+  createdAt   DateTime  @default(now())
+
+  @@index([patientId])
+}
+
+// Отзыв подписанных ссылок пациента: ссылки вида kind на targetId, выпущенные до revokedAt, недействительны
+model LinkRevocation {
+  id        String   @id @default(cuid())
+  kind      String // ap | wl | u | max
+  targetId  String
+  revokedAt DateTime @default(now())
+  reason    String?
+
+  @@unique([kind, targetId])
+}
+
+model DocumentTemplate {
+  id        String           @id @default(cuid())
+  code      String           @unique
+  name      String
+  kind      String           @default("FORM") // CONTRACT | CONSENT | FORM
+  body      String // текст с {{подстановками}}
+  active    Boolean          @default(true)
+  documents SignedDocument[]
+}
+
+model SignedDocument {
+  id          String    @id @default(cuid())
+  patientId   String
+  templateId  String
+  visitId     String?
+  title       String
+  content     String // снимок отрендеренного текста
+  signed      Boolean   @default(false)
+  signedAt    DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  patient   Patient          @relation(fields: [patientId], references: [id])
+  template  DocumentTemplate @relation(fields: [templateId], references: [id])
+  visit     Visit?           @relation(fields: [visitId], references: [id])
+  createdBy StaffUser?       @relation("StaffDocuments", fields: [createdById], references: [id])
+
+  @@index([patientId])
+}
+
+// ============ Аутентификация, RBAC и аудит (РД-001..020, ФТ-039) ============
+
+model AuthSession {
+  id        String    @id // случайный токен в httpOnly-cookie
+  userId    String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  user      StaffUser @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model PendingLogin {
+  id        String    @id // случайный challengeId (не userId)
+  userId    String
+  code      String? // демо-режим: одноразовый код; в проде — null (проверяется TOTP)
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  user      StaffUser @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+// Лимиты запросов в БД (вход, 2FA, виджет) — работают при нескольких инстансах
+model RateLimit {
+  key         String   @id // например login:user:<login>, login:ip:<ip>, widget:phone:<phone>
+  count       Int      @default(0)
+  windowStart DateTime @default(now())
+  lockedUntil DateTime?
+}
+
+// Правила каскада напоминаний (вместо захардкоженных 48/24/3 ч)
+model ReminderRule {
+  id      String  @id @default(cuid())
+  level   Int     @unique
+  hours   Int
+  active  Boolean @default(true)
+}
+
+// Маркетинг: сегменты и кампании рассылок
+model Segment {
+  id          String     @id @default(cuid())
+  name        String
+  // JSON-фильтр: {"lastVisitMonthsMin":6,"birthdayInDays":7,"gender":"F","noShowMin":1}
+  filterJson  String     @default("{}")
+  createdAt   DateTime   @default(now())
+  campaigns   Campaign[]
+}
+
+model Campaign {
+  id          String    @id @default(cuid())
+  name        String
+  segmentId   String
+  channel     String    @default("SMS") // SMS | EMAIL | MAX
+  text        String
+  status      String    @default("DRAFT") // DRAFT | SENT
+  recipients  Int       @default(0)
+  sentAt      DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  segment     Segment   @relation(fields: [segmentId], references: [id])
+}
+
+// ============ Лист ожидания (ФТ-004, ТУ-004) ============
+
+model WaitingListEntry {
+  id        String   @id @default(cuid())
+  patientId String
+  doctorId  String? // null — любой врач направления
+  specialty String? // желаемое направление при doctorId = null
+  serviceId String? // желаемая услуга (прайс-лист ФТ-007)
+  daysMask  String   @default("1111100") // Пн..Вс
+  fromTime  String   @default("08:00")
+  toTime    String   @default("20:00")
+  priority  Int      @default(0) // 0 — обычный, 1 — срочный
+  status    String   @default("ACTIVE") // ACTIVE | OFFERED | BOOKED | DECLINED | EXPIRED
+  comment   String?
+  createdAt DateTime @default(now())
+
+  // Автопредложение освободившегося слота (ТУ-004): ограничение времени ответа
+  offeredDoctorId String?
+  offeredSlot     DateTime?
+  offeredAt       DateTime?
+  offerExpiresAt  DateTime?
+  bookedAppointmentId String? @unique
+
+  patient          Patient      @relation(fields: [patientId], references: [id])
+  doctor          Doctor?      @relation("WaitingDoctor", fields: [doctorId], references: [id])
+  offeredDoctor   Doctor?      @relation("WaitingOfferedDoctor", fields: [offeredDoctorId], references: [id])
+  service          ServiceItem? @relation(fields: [serviceId], references: [id])
+  bookedAppointment Appointment? @relation(fields: [bookedAppointmentId], references: [id])
+
+  @@index([status])
+  @@index([patientId])
+}
+
+// ============ Каскады напоминаний (ФТ-005, ТУ-004) ============
+
+model Reminder {
+  id            String    @id @default(cuid())
+  appointmentId String
+  level         Int // 1 — за 48 ч, 2 — за 24 ч, 3 — за 3 ч
+  channel       String    @default("SMS") // SMS | MAX (при отсутствии привязки MAX — фолбэк на SMS)
+  plannedAt     DateTime
+  status        String    @default("PLANNED") // PLANNED | SENT | FAILED | CANCELED
+  sentAt        DateTime?
+  text          String?
+  response      String? // CONFIRMED | DECLINED — ответ пациента (кнопка в MAX или ссылка в SMS)
+  respondedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([status, plannedAt])
+  @@index([appointmentId])
+}
+
+// Черновики онлайн-записи из виджета (ФТ-012): удержание слота до 15 минут (КП-017)
+model WidgetDraft {
+  id        String   @id @default(cuid())
+  doctorId  String
+  start     DateTime
+  serviceId String?
+  name      String
+  phone     String
+  code      String // 6 цифр — подтверждение телефона кодом из SMS
+  attempts  Int      @default(0) // неверные вводы кода, не более 5
+  status    String   @default("PENDING") // PENDING | CONFIRMED | EXPIRED
+  // Согласие на обработку ПДн, данное в виджете (152-ФЗ): переносится в ConsentRecord при подтверждении
+  consentVersion String?
+  consentHash    String?
+  consentIp      String?
+  marketingConsent Boolean @default(false) // отдельная необязательная галочка (38-ФЗ ст.18)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([status, expiresAt])
+}
+
+// ============ Центр уведомлений (ФТ-013) ============
+
+// Единый журнал исходящих сообщений: статусы доставки, повторные попытки,
+// часы тишины, чёрные списки, лимиты тарифа. Через него доставляются
+// напоминания (ФТ-005) и приглашения из листа ожидания (ТУ-004).
+// Ссылки related* — снимки id без FK (append-only журнал).
+model Notification {
+  id        String   @id @default(cuid())
+  kind      String   @default("REMINDER") // REMINDER | WAITLIST_OFFER | RISK_TOUCH | MANUAL | EMAIL_FALLBACK
+  channel   String   @default("SMS") // SMS | MAX | EMAIL
+  priority  Int      @default(0) // 1 — срочное: обходит часы тишины
+  patientId String?
+  patientName String? // снимок на момент отправки
+  phone     String // телефон; для канала EMAIL — адрес получателя (ИНТ-014)
+  text      String
+  status    String   @default("QUEUED") // QUEUED | SENDING | DEFERRED_QUIET | SENT | FAILED | BLOCKED_BLACKLIST | BLOCKED_LIMIT
+  attempts  Int      @default(0)
+  maxAttempts Int    @default(3)
+  nextAttemptAt DateTime @default(now())
+  sentAt    DateTime?
+  error     String?
+  externalId String? // id сообщения у провайдера (email, SMS, MAX)
+  lockedUntil DateTime? // захват воркером (SENDING): защита от двойной отправки параллельными воркерами
+  fallbackFrom String? // MAX → SMS: исходный канал, если пациент не привязан или MAX не настроен
+  relatedAppointmentId String?
+  relatedReminderId    String?  @unique // одно сообщение на напоминание: повторный PROCESS не создаст дубль
+  relatedWaitingId     String?
+  createdAt DateTime @default(now())
+
+  @@index([status, nextAttemptAt])
+  @@index([createdAt])
+}
+
+// Шаблоны сообщений (ФТ-013): текст с {{подстановками}}
+model NotificationTemplate {
+  id       String  @id @default(cuid())
+  code     String  @unique
+  name     String
+  kind     String  @default("REMINDER") // REMINDER | WAITLIST_OFFER | RISK_TOUCH
+  channel  String  @default("SMS")
+  body     String
+  active   Boolean @default(true)
+}
+
+// Настройки центра уведомлений (singleton): часы тишины, лимит тарифа, ретраи
+model NotificationSetting {
+  id            String @id @default("main")
+  quietFrom     String @default("21:00")
+  quietTo       String @default("09:00")
+  dailyLimit    Int    @default(500) // лимит сообщений в сутки по тарифу
+  retryMinutes  Int    @default(5)
+  maxAttempts   Int    @default(3)
+}
+
+// Чёрные списки (ФТ-013): телефоны, исключённые из рассылок
+model NotificationBlacklist {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  patientId String?
+  reason    String?
+  createdAt DateTime @default(now())
+}
+
+// ============ Склад расходных материалов (ФТ-008, ОТЧ-23..25) ============
+
+model StockItem {
+  id       String  @id @default(cuid())
+  sku      String  @unique
+  name     String
+  category String  @default("Расходные материалы")
+  unit     String  @default("шт")
+  qty      Int     @default(0) // сумма остатков по всем складам (денормализация v2)
+  minQty   Int     @default(0)
+  price    Int     @default(0) // себестоимость единицы, руб.
+  active   Boolean @default(true)
+  movements      StockMovement[]
+  balances       StockBalance[]
+  transferLines  TransferLine[]
+  inventoryLines InventoryLine[]
+}
+
+model StockMovement {
+  id        String   @id @default(cuid())
+  itemId    String
+  type      String // IN | OUT | WRITEOFF | INVENTORY | TRANSFER_OUT | TRANSFER_IN | ADJ_IN | ADJ_OUT
+  qty       Int // всегда положительное; знак определяется типом
+  price     Int      @default(0)
+  visitId   String? // расход «на визит» (автосписание ФТ-008); без FK — журнал
+  note      String?
+  userId    String?
+  warehouseId String? // склад операции (v2: перемещения/инвентаризация — ФТ-008)
+  transferId String? // документ перемещения ПМ-xxxxxx
+  inventoryId String? // акт инвентаризации ИНВ-xxxxxx
+  createdAt DateTime @default(now())
+  item      StockItem @relation(fields: [itemId], references: [id])
+
+  @@index([itemId, createdAt])
+  @@index([visitId])
+  @@index([warehouseId])
+}
+
+// ============ Складской контур v2: склады, перемещения, инвентаризация (ФТ-008) ============
+
+// Склады филиалов: перемещения между ними и инвентаризация — полноценные
+// документы с проводками остатков (ФТ-008: приход/расход/перемещение/инвентаризация)
+model Warehouse {
+  id       String  @id @default(cuid())
+  code     String  @unique // MAIN | FILIAL | CENTRAL
+  name     String
+  address  String?
+  kind     String  @default("MAIN") // MAIN | FILIAL | CENTRAL
+  active   Boolean @default(true)
+
+  balances      StockBalance[]
+  transfersFrom TransferDoc[] @relation("TransfersFrom")
+  transfersTo   TransferDoc[] @relation("TransfersTo")
+  inventories   InventoryAct[]
+}
+
+// Остаток номенклатуры на складе; [itemId+warehouseId] уникальный
+model StockBalance {
+  id          String @id @default(cuid())
+  itemId      String
+  warehouseId String
+  qty         Int    @default(0)
+
+  item      StockItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, warehouseId])
+}
+
+// Документ перемещения ТМЦ между складами: черновик → в пути → принято
+model TransferDoc {
+  id              String    @id @default(cuid())
+  number          String    @unique // ПМ-000001
+  fromWarehouseId String
+  toWarehouseId   String
+  status          String    @default("DRAFT") // DRAFT | IN_TRANSIT | COMPLETED | CANCELED
+  comment         String?
+  createdBy       String? // name-снимок сотрудника
+  createdAt       DateTime  @default(now())
+  dispatchedAt    DateTime?
+  completedAt     DateTime?
+
+  fromWarehouse Warehouse     @relation("TransfersFrom", fields: [fromWarehouseId], references: [id])
+  toWarehouse   Warehouse     @relation("TransfersTo", fields: [toWarehouseId], references: [id])
+  lines         TransferLine[]
+
+  @@index([status])
+}
+
+model TransferLine {
+  id         String @id @default(cuid())
+  transferId String
+  itemId     String
+  qty        Int
+
+  transfer TransferDoc @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item     StockItem   @relation(fields: [itemId], references: [id])
+}
+
+// Акт инвентаризации: учётный остаток против факта; излишки/недостачи — проводками
+model InventoryAct {
+  id           String   @id @default(cuid())
+  number       String   @unique // ИНВ-000001
+  warehouseId  String
+  status       String   @default("OPEN") // OPEN | COMPLETED
+  comment      String?
+  createdBy    String? // name-снимок сотрудника
+  createdAt     DateTime @default(now())
+  completedAt   DateTime?
+  surplusCost  Int      @default(0) // излишки, руб.
+  shortageCost Int      @default(0) // недостачи, руб.
+
+  warehouse Warehouse       @relation(fields: [warehouseId], references: [id])
+  lines     InventoryLine[]
+}
+
+model InventoryLine {
+  id           String @id @default(cuid())
+  actId        String
+  itemId       String
+  accountedQty Int // учётный остаток на момент создания акта
+  factQty      Int? // фактический остаток; null — позиция ещё не посчитана
+
+  act  InventoryAct @relation(fields: [actId], references: [id], onDelete: Cascade)
+  item StockItem     @relation(fields: [itemId], references: [id])
+
+  @@index([actId])
+}
+
+// ============ Выгрузки в 1С (ИНТ-006, складской контур) ============
+
+// Пакет выгрузки: номенклатура / остатки / документы за период в
+// CommerceML-подобном XML; очередь с 3 попытками, подтверждение от 1С
+model OneCExport {
+  id          String   @id @default(cuid())
+  scope       String // NOMENCLATURE | BALANCES | DOCS
+  periodFrom  DateTime
+  periodTo    DateTime
+  status      String   @default("QUEUED") // QUEUED | SENT | CONFIRMED | ERROR
+  attempts    Int      @default(0)
+  docsCount   Int      @default(0)
+  size        Int      @default(0) // байт XML
+  xml         String // снимок пакета для скачивания и повторной отправки
+  comment     String?
+  createdAt   DateTime @default(now())
+  sentAt      DateTime?
+  confirmedAt DateTime?
+  error       String?
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============ Планировщик регулярных отчётов ============
+
+// Регулярная выгрузка: отчёт по расписанию, письмо с CSV через
+// email-провайдер (ИНТ-014), история запусков (ReportRun)
+model ReportSchedule {
+  id         String   @id @default(cuid())
+  name       String
+  reportKey  String // ключ из SCHED_REPORTS: ОТЧ-01 | ОТЧ-03 | ОТЧ-24 | ОТЧ-26 | ОТЧ-27 | CASH_DAY
+  period     String   @default("DAILY") // DAILY | WEEKLY | MONTHLY
+  atTime     String   @default("09:00") // время запуска HH:MM
+  recipients String // email-адреса через запятую
+  active     Boolean  @default(true)
+  lastRunAt  DateTime?
+  nextRunAt  DateTime
+  createdBy  String? // name-снимок сотрудника
+  createdAt  DateTime @default(now())
+
+  runs ReportRun[]
+}
+
+model ReportRun {
+  id          String    @id @default(cuid())
+  scheduleId  String
+  status      String    @default("RUNNING") // RUNNING | DONE | FAILED
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  rowsCount   Int       @default(0)
+  summary     String?
+  csv         String? // снимок CSV для вложения в письмо
+  emailStatus String? // SENT | FAILED | SKIPPED
+  emailTo     String?
+  error       String?
+
+  schedule ReportSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@index([scheduleId, startedAt])
+}
+
+// ============ Интеграции (ИНТ-001..018) ============
+
+// Transactional outbox (АРХ-004): журнал событий интеграции — повторы
+// с backoff 1/5/15/60/240 мин, затем DLQ (ИНТ-001)
+model IntegrationEvent {
+  id        String   @id @default(cuid())
+  system    String // EGISZ | LAB | DMS | TELEPHONY | FISCAL | ERP_1C
+  direction String   @default("OUT") // OUT | IN
+  summary   String // человекочитаемая сводка события
+  payload   String   // JSON-снимок
+  status    String   @default("QUEUED") // QUEUED | SENT | CONFIRMED | ERROR | DLQ
+  attempts  Int      @default(0)
+  nextAttemptAt DateTime @default(now())
+  error     String?
+  createdAt DateTime @default(now())
+  sentAt    DateTime?
+
+  @@index([status, nextAttemptAt])
+  @@index([system, createdAt])
+}
+
+// ЕГИСЗ / РЕМД (ИНТ-010): ЭМД по визитам — очередь передачи через СМЭВ 3
+model EgiszDocument {
+  id          String   @id @default(cuid())
+  visitId     String   @unique
+  patientId   String
+  docType     String   @default("AMBULATORY_EPISODE") // тип РЭМД
+  status      String   @default("QUEUED") // QUEUED | SENT | CONFIRMED | ERROR
+  smevId      String? // идентификатор сообщения СМЭВ
+  error       String?
+  attempts    Int      @default(0)
+  createdAt   DateTime @default(now())
+  sentAt      DateTime?
+  confirmedAt DateTime?
+  visit       Visit?   @relation(fields: [visitId], references: [id])
+
+  @@index([status])
+}
+
+// Лаборатории (ИНТ-001): направления с автоматическим импортом результатов в ЭМК
+model LabReferral {
+  id         String   @id @default(cuid())
+  patientId  String
+  visitId    String?
+  lab        String // INVITRO | HELIX | KDL
+  tests      String // JSON: [{code, name}]
+  status     String   @default("CREATED") // CREATED | SENT | RESULT_READY | IMPORTED | ERROR
+  resultText String?
+  sentAt     DateTime?
+  importedAt DateTime?
+  error      String?
+  attempts   Int      @default(0)
+  createdAt  DateTime @default(now())
+  visit      Visit?   @relation(fields: [visitId], references: [id])
+
+  @@index([status])
+  @@index([patientId])
+}
+
+// Полисы ДМС: связка пациент — страховая
+model InsurancePolicy {
+  id           String    @id @default(cuid())
+  patientId    String
+  insurer      String // СОГАЗ | АльфаСтрахование | РЕСО-Гарантия | Ингосстрах-М
+  policyNumber String
+  validTill    DateTime?
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  patient      Patient   @relation(fields: [patientId], references: [id])
+
+  @@index([patientId])
+}
+
+// Реестр взаиморасчётов с ДМС (ОТЧ-19): строка реестра = услуга визита
+model DmsClaim {
+  id          String   @id @default(cuid())
+  visitId     String?
+  patientId   String
+  insurer     String
+  serviceName String // снимок услуги
+  amount      Int // руб. к возмещению
+  status      String   @default("CREATED") // CREATED | SUBMITTED | PAID | DENIED
+  denyReason  String?
+  createdAt   DateTime @default(now())
+  submittedAt DateTime?
+  paidAt      DateTime?
+
+  @@index([status])
+  @@index([insurer])
+}
+
+// Телефония CTI (ИНТ-003, ФТ-011): журнал звонков, пропущенные — задачи
+model CallEvent {
+  id        String   @id @default(cuid())
+  phone     String
+  patientId String?
+  direction String   @default("IN") // IN | OUT
+  status    String   @default("INCOMING") // INCOMING | ANSWERED | MISSED | TASK
+  duration  Int      @default(0) // сек.
+  recording Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+// История согласий пациента (доказательство для РКН): дано/отозвано, версия и хеш текста
+model ConsentRecord {
+  id        String   @id @default(cuid())
+  patientId String
+  kind      String // PD | MARKETING
+  action    String // GIVEN | REVOKED
+  version   String?
+  textHash  String? // sha256 текста согласия, показанного пациенту
+  source    String // WIDGET | REGISTRAR | PAPER | UNSUBSCRIBE_LINK | MAX | MIGRATION
+  staffId   String?
+  ip        String?
+  createdAt DateTime @default(now())
+  patient   Patient  @relation(fields: [patientId], references: [id])
+
+  @@index([patientId])
+}
+
+// ============ Аудит (ФТ-039, АРХ-013) ============
+model AuditLog {
+  id        String     @id @default(cuid())
+  action    String
+  userId    String?
+  meta      String?
+  createdAt DateTime   @default(now())
+  user      StaffUser? @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+}
+
+// Исключения графика: праздники клиники (doctorId = null), отпуск/больничный врача,
+// изменённые часы на конкретную дату. Дата — календарный день в поясе клиники.
+model ScheduleException {
+  id        String   @id @default(cuid())
+  doctorId  String?
+  date      String // YYYY-MM-DD
+  kind      String   @default("OFF") // OFF — нерабочий день | HOURS — особые часы
+  workStart String?
+  workEnd   String?
+  reason    String?
+  createdAt DateTime @default(now())
+  doctor    Doctor?  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+}
+
+// Справочник МКБ-10 (НСИ Минздрава, OID 1.2.643.5.1.13.13.11.1005): загружается командой
+// `npm run cli -- icd-import --file <csv>` из выгрузки НСИ. Пока таблица пуста —
+// используется встроенный краткий список (только для демо).
+model IcdCode {
+  code       String   @id // MKB_CODE, например «M54.5»
+  name       String // MKB_NAME
+  parentCode String?
+  actual     Boolean  @default(true) // ACTUAL: неактуальные коды нельзя ставить в новые визиты
+  source     String   @default("NSI_CSV") // NSI_CSV | NSI_API | BUILTIN
+  updatedAt  DateTime @updatedAt
+
+  @@index([name])
+}
