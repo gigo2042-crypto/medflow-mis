@@ -1,0 +1,16 @@
+MedFlow
+© 2026 Tony Genenncher. Все права защищены. / All rights reserved.
+
+Исходный код опубликован только для просмотра и оценки. Условия — в файле LICENSE.
+Использование, развёртывание, копирование, изменение, производные работы и обучение ИИ
+запрещены без письменного разрешения автора.
+Source code is published for viewing and evaluation only. See LICENSE. Use, deployment,
+copying, modification, derivative works and AI training are prohibited without written
+permission from the author.
+
+Сторонние компоненты (Next.js, React, Prisma, Radix UI, Tailwind CSS и другие) остаются
+под собственными лицензиями, список — в package.json и package-lock.json. Эта лицензия
+на них не распространяется.
+Third-party components (Next.js, React, Prisma, Radix UI, Tailwind CSS and others) remain
+under their own licenses (see package.json and package-lock.json). This license does not
+apply to them.

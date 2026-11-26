@@ -1,0 +1,145 @@
+MedFlow Source-Available Viewing License, версия 1.0 (редакция на русском — приоритетная)
+MedFlow Source-Available Viewing License, version 1.0 (English translation below)
+
+© 2026 Tony Genenncher («Правообладатель»). Все права защищены.
+
+Это НЕ лицензия открытого исходного кода. Исходный код опубликован только для того,
+чтобы его можно было прочитать и оценить. Всё, что прямо не разрешено ниже, запрещено.
+
+1. Что разрешено
+
+   1.1. Просматривать и читать исходный код и документацию в этом репозитории — чтобы
+        оценить квалификацию автора (например, при найме или деловой оценке).
+   1.2. Скачать неизменённую копию и запустить её локально на собственном компьютере
+        только с демо-данными, только для оценки по п. 1.1 и не дольше 30 дней;
+        после этого удалить копию. Копия не должна быть доступна другим людям по сети.
+   1.3. Цитировать небольшие фрагменты (не более 20 строк подряд) с указанием автора и
+        ссылки на репозиторий — для рецензий, обсуждений и обучения. Это не отменяет
+        прав, которые закон даёт вам без согласия правообладателя (например, цитирование).
+
+2. Что запрещено без отдельного письменного разрешения Правообладателя
+
+   2.1. Любое использование в коммерческих целях, в том числе внутри компании,
+        для работы, продукта или услуги.
+   2.2. Развёртывание и запуск для любых пользователей, кроме вас самих (серверы,
+        облака, SaaS, демо-стенды, контейнеры), и любой запуск с реальными данными.
+   2.3. Копирование, воспроизведение и распространение кода целиком или частями
+        (кроме п. 1.3), публикация, форки вне платформы GitHub, зеркала, выкладка в другие
+        репозитории, архивы, пересказ кода другими словами с сохранением структуры решения.
+   2.4. Модификация, перевод, адаптация, создание производных произведений, а также
+        использование кода, архитектуры, схемы базы данных, текстов и интерфейсов как
+        основы или образца для другого продукта.
+   2.5. Использование материалов репозитория для обучения, дообучения, оценки или
+        настройки моделей машинного обучения и ИИ, для наполнения датасетов, баз
+        знаний, векторных индексов и поисковых систем, а также автоматизированный
+        сбор (scraping, краулинг) репозитория для этих целей.
+   2.6. Удаление или изменение уведомлений об авторском праве и этой лицензии.
+   2.7. Сублицензирование и передача прав третьим лицам.
+   2.8. Использование названия «MedFlow», логотипа и имени автора способом, который
+        создаёт впечатление одобрения или авторства.
+
+3. Права и срок
+
+   3.1. Все исключительные права принадлежат Правообладателю. Лицензия простая
+        (неисключительная), безвозмездная, непередаваемая, действует на территории
+        всего мира на время существования исключительного права и только в границах п. 1.
+   3.2. Любое действие за пределами п. 1 — нарушение. Права по этой лицензии прекращаются
+        автоматически с момента нарушения. После этого вы обязаны удалить все копии.
+        Правообладатель вправе требовать устранения нарушения, возмещения убытков или
+        компенсации, а также применять иные меры защиты, предусмотренные законом.
+   3.3. Платформа GitHub по своим условиям даёт другим пользователям GitHub технические
+        возможности (просмотр, форк внутри GitHub). Эти условия не расширяют права,
+        указанные в этой лицензии: форк на GitHub не даёт права на использование,
+        модификацию и распространение.
+   3.4. Для коммерческой лицензии или иного разрешения — свяжитесь с Правообладателем
+        через профиль владельца репозитория на GitHub.
+
+4. Отказ от гарантий
+
+   Программное обеспечение предоставляется «как есть», без каких-либо гарантий. В
+   пределах, допустимых законом, Правообладатель не отвечает за убытки, связанные с
+   его просмотром или запуском. Репозиторий содержит демонстрационные данные;
+   реальные персональные данные в него загружать нельзя.
+
+5. Честная оговорка
+
+   Публичный код технически можно скопировать. Эта лицензия — юридическая основа
+   защиты, а не техническая мера. Она не заменяет консультацию юриста.
+
+6. Применимое право
+
+   К этой лицензии применяется право Российской Федерации, если иное не требуется
+   императивными нормами права страны пользователя.
+
+----------------------------------------------------------------------------------------
+ENGLISH TRANSLATION (for convenience; the Russian text prevails in case of discrepancy)
+----------------------------------------------------------------------------------------
+
+© 2026 Tony Genenncher (the "Licensor"). All rights reserved.
+
+This is NOT an open-source license. The source code is published only so that it can be
+read and evaluated. Everything not expressly permitted below is prohibited.
+
+1. Permitted
+
+   1.1. View and read the source code and documentation in this repository in order to
+        evaluate the author's skills (for example, in hiring or business evaluation).
+   1.2. Download an unmodified copy and run it locally on your own computer, with demo
+        data only, solely for the evaluation in 1.1, for no longer than 30 days; then
+        delete the copy. The copy must not be reachable by other people over a network.
+   1.3. Quote short excerpts (no more than 20 consecutive lines) with attribution and a
+        link to the repository, for reviews, discussion and teaching. This does not
+        limit rights that the law gives you without the Licensor's consent.
+
+2. Prohibited without separate written permission from the Licensor
+
+   2.1. Any commercial use, including internal use within a company, for work, a
+        product or a service.
+   2.2. Deploying or running for anyone other than yourself (servers, clouds, SaaS,
+        demo environments, containers), and any run with real data.
+   2.3. Copying, reproducing or distributing the code in whole or in part (except 1.3),
+        publishing, forks outside the GitHub platform, mirrors, re-uploading to other
+        repositories, archives, or paraphrasing the code while keeping the solution's
+        structure.
+   2.4. Modifying, translating, adapting, creating derivative works, or using the code,
+        architecture, database schema, texts or interfaces as the basis or a template for
+        another product.
+   2.5. Using the repository materials to train, fine-tune, evaluate or tune machine
+        learning or AI models, to populate datasets, knowledge bases, vector indexes or
+        search engines, and automated collection (scraping, crawling) of the repository
+        for those purposes.
+   2.6. Removing or altering copyright notices or this license.
+   2.7. Sublicensing or transferring rights to third parties.
+   2.8. Using the name "MedFlow", the logo or the author's name in a way that implies
+        endorsement or authorship.
+
+3. Rights and term
+
+   3.1. All exclusive rights belong to the Licensor. This license is non-exclusive,
+        royalty-free, non-transferable, worldwide, for the term of the exclusive right,
+        and only within the limits of section 1.
+   3.2. Any action outside section 1 is a violation. Rights under this license terminate
+        automatically upon violation, and you must delete all copies. The Licensor may
+        demand that the violation be stopped, claim damages or statutory compensation,
+        and use any other remedies provided by law.
+   3.3. By its terms, GitHub gives other GitHub users technical capabilities (viewing,
+        forking within GitHub). Those terms do not extend the rights granted here: a fork
+        on GitHub does not grant any right to use, modify or distribute.
+   3.4. For a commercial license or any other permission, contact the Licensor through
+        the repository owner's GitHub profile.
+
+4. Disclaimer
+
+   The software is provided "as is", without warranty of any kind. To the extent
+   permitted by law, the Licensor is not liable for any damages arising from viewing or
+   running it. The repository contains demo data only; never load real personal data.
+
+5. Honest note
+
+   Public code can technically be copied. This license is a legal basis for protection,
+   not a technical measure. It is not a substitute for legal advice.
+
+6. Governing law
+
+   The laws of the Russian Federation apply, unless mandatory law of the user's country
+   requires otherwise.
