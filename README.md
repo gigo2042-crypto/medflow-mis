@@ -12,11 +12,11 @@ MedFlow — моё портфолио-проект: веб-система для
 
 | Регистратор: у роли 6 вкладок из 15 | Расписание врачей |
 |---|---|
-| ![Регистратор](docs/screenshots/1-registrar-6-tabs.png) | ![Расписание](docs/screenshots/2-schedule.png) |
+| ![Регистратор](docs/screenshots/1-registrar-6-tabs.svg) | ![Расписание](docs/screenshots/2-schedule.svg) |
 | **Касса, 54-ФЗ** | **Дашборд руководителя** |
-| ![Касса](docs/screenshots/3-cash.png) | ![Дашборд](docs/screenshots/4-dashboard.png) |
+| ![Касса](docs/screenshots/3-cash.svg) | ![Дашборд](docs/screenshots/4-dashboard.svg) |
 
-Публичный виджет онлайн-записи: [docs/screenshots/5-public-booking.png](docs/screenshots/5-public-booking.png).
+Публичный виджет онлайн-записи: [docs/screenshots/5-public-booking.svg](docs/screenshots/5-public-booking.svg).
 
 ## Стек
 
