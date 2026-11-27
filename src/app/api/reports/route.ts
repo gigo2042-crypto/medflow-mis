@@ -451,7 +451,7 @@ export async function GET(req: NextRequest) {
         p.type === 'REFUND' ? 'Возврат' : 'Оплата',
         { CASH: 'Наличные', CARD: 'Карта', SBP: 'СБП' }[p.method] ?? p.method,
         money(Math.abs(p.amount)),
-        p.fiscalStatus === 'ISSUED' ? `чек ${p.fiscalNumber ?? ''}` : 'в очереди ОФД',
+        p.fiscalStatus === 'ISSUED' ? `чек ${p.fiscalNumber ?? ''}` : p.fiscalStatus === 'NOT_REQUIRED' ? 'без чека МИС (внешняя ККТ)' : p.fiscalStatus === 'CANCELED' ? 'отменена, чек не пробит' : 'в очереди ОФД',
       ]))
 
       // ОТЧ-30 Продажи по позициям прайса — дублирует ОТЧ-16 по количеству

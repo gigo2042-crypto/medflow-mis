@@ -162,3 +162,48 @@ describe('блокировка входа по логину+IP', () => {
     expect((await POST(post('/api/auth/login', { login: 'mkt.lock', password: 'Fake-pass-12345' }, '192.0.2.10'))).status).toBe(200)
   }, 60_000)
 })
+
+// Ревью ocr (находки 1, 3): резерв попытки при сбое БД возвращается; глобальный лимит логина — до проверки пароля.
+describe('вход: резерв попыток', () => {
+  it('сбой БД при поиске пользователя → 500, попытка не сгорает: после 6 сбоев верный пароль входит', async () => {
+    await staff('mkt.dbfail', 'MARKETER', false)
+    const { POST } = await import('@/app/api/auth/login/route')
+    const { db: appDb } = await import('@/lib/db')
+    const spy = vi.spyOn(appDb.staffUser, 'findUnique').mockRejectedValue(new Error('fake db outage'))
+    const st: number[] = []
+    try {
+      for (let i = 0; i < 6; i++) st.push((await POST(post('/api/auth/login', { login: 'mkt.dbfail', password: 'Fake-pass-12345' }, '192.0.2.60'))).status)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(st).toEqual([500, 500, 500, 500, 500, 500])
+    const rows = await db.rateLimit.findMany({ where: { key: { contains: 'mkt.dbfail' } } })
+    expect(rows.every((r) => r.count === 0 && r.lockedUntil === null)).toBe(true)
+    expect((await POST(post('/api/auth/login', { login: 'mkt.dbfail', password: 'Fake-pass-12345' }, '192.0.2.60'))).status).toBe(200)
+  }, 60_000)
+  it('неверные пароли по-прежнему считаются: 5 неудач, 6-я попытка → 429 до проверки пароля', async () => {
+    await staff('mkt.count', 'MARKETER', false)
+    const { POST } = await import('@/app/api/auth/login/route')
+    const st: number[] = []
+    for (let i = 0; i < 6; i++) st.push((await POST(post('/api/auth/login', { login: 'mkt.count', password: `wrong-${i}-xxxxxx` }, '192.0.2.61'))).status)
+    expect(st).toEqual([401, 401, 401, 401, 401, 429])
+  }, 60_000)
+  it('распределённая пачка: 130 параллельных неверных паролей с разных IP → проверка пароля не больше 100 раз (ACCOUNT_LIMIT)', async () => {
+    await staff('mkt.dist', 'MARKETER', false)
+    const { POST } = await import('@/app/api/auth/login/route')
+    const rs = await Promise.all(
+      Array.from({ length: 130 }, (_, i) => POST(post('/api/auth/login', { login: 'mkt.dist', password: `wrong-${i}-xxxxxx` }, `10.9.${Math.floor(i / 200)}.${(i % 200) + 1}`)))
+    )
+    const st = rs.map((r) => r.status)
+    expect(st.filter((x) => x === 401).length).toBeLessThanOrEqual(100)
+    expect(st.filter((x) => x === 429).length).toBeGreaterThanOrEqual(30)
+    expect(await db.auditLog.count({ where: { action: 'auth.login_failed' } })).toBeLessThanOrEqual(100)
+  }, 180_000)
+  it('успешный вход возвращает свой резерв по логину, но не стирает чужие неудачи', async () => {
+    await staff('mkt.ok', 'MARKETER', false)
+    const { POST } = await import('@/app/api/auth/login/route')
+    for (let i = 0; i < 3; i++) await POST(post('/api/auth/login', { login: 'mkt.ok', password: `wrong-${i}-xxxxxx` }, `198.18.0.${i + 1}`))
+    expect((await POST(post('/api/auth/login', { login: 'mkt.ok', password: 'Fake-pass-12345' }, '198.18.0.50'))).status).toBe(200)
+    expect((await db.rateLimit.findUniqueOrThrow({ where: { key: 'login:acct:mkt.ok' } })).count).toBe(3)
+  }, 60_000)
+})

@@ -193,7 +193,7 @@ model Payment {
   method       String    @default("CARD") // CASH | CARD | SBP
   type         String    @default("PAYMENT") // PAYMENT | REFUND
   status       String    @default("PAID") // PAID | CANCELED
-  fiscalStatus String    @default("QUEUED") // QUEUED | PENDING | ISSUED | ERROR — фискализация 54-ФЗ (ФТ-006)
+  fiscalStatus String    @default("QUEUED") // QUEUED | PENDING | ISSUED | ERROR | CANCELED | NOT_REQUIRED (возврат записью, внешняя ККТ) — фискализация 54-ФЗ (ФТ-006)
   fiscalNumber String?
   fiscalAt     DateTime?
   fiscalUuid   String? // uuid документа в облачной кассе (АТОЛ Онлайн)

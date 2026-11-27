@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { randomBytes, randomInt } from 'crypto'
 import { db } from '@/lib/db'
 import { audit, createAuthSession, setSessionCookie, verifyPassword } from '@/lib/auth-server'
-import { hit, isLocked, resetLimit } from '@/lib/rate-limit'
+import { hit, isLocked, releaseHit, resetLimit } from '@/lib/rate-limit'
 import { clientIp } from '@/lib/request-ip'
 import { isDemo } from '@/lib/config'
 import { twoFaRoles } from '@/lib/auth/twofa-policy'
@@ -11,11 +11,19 @@ import { toMe } from '@/lib/auth/me'
 
 export const dynamic = 'force-dynamic'
 
+function tooMany(retryAfterSec: number) {
+  return NextResponse.json(
+    { error: `Слишком много неудачных попыток. Повторите через ${Math.max(1, Math.ceil(retryAfterSec / 60))} мин.` },
+    { status: 429 }
+  )
+}
+
 // Лимиты входа в БД (РД-018, чек-лист Тони P1):
 //  • логин+IP — 5 неудач за 15 мин: подбор с одного адреса блокируется, а злоумышленник
 //    не может заблокировать сотрудника, вводя неверный пароль с другого адреса;
 //  • IP — 30 неудач (перебор логинов с одного адреса);
-//  • логин глобально — 100 неудач (распределённый подбор с многих адресов).
+//  • логин глобально — 100 попыток (распределённый подбор с многих адресов); резерв до проверки пароля,
+//    успешный вход возвращает свой резерв.
 // Снять блокировку: npm run cli -- unlock --login <логин> [--ip <адрес>]
 const LOGIN_LIMIT = 5
 const IP_LIMIT = 30
@@ -47,25 +55,42 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Попытка по паре логин+IP засчитывается АТОМАРНО ДО проверки пароля: пачка параллельных запросов
-    // с разными паролями проходит проверку не более LOGIN_LIMIT раз (раньше все они успевали пройти
-    // isLocked до первой блокировки). Успешный вход сбрасывает счётчик ниже.
+    // Попытка засчитывается АТОМАРНО ДО проверки пароля — и по паре логин+IP, и по логину глобально:
+    // пачка параллельных запросов (с одного адреса или с многих) проходит проверку пароля не более
+    // LOGIN_LIMIT / ACCOUNT_LIMIT раз — раньше все они успевали пройти isLocked до первой блокировки.
     const attempt = await hit(userKey, LOGIN_LIMIT, WINDOW_MS, LOCK_MS)
-    if (!attempt.allowed) {
-      return NextResponse.json(
-        { error: `Слишком много неудачных попыток. Повторите через ${Math.max(1, Math.ceil(attempt.retryAfterSec / 60))} мин.` },
-        { status: 429 }
-      )
+    if (!attempt.allowed) return tooMany(attempt.retryAfterSec)
+    const acct = await hit(acctKey, ACCOUNT_LIMIT, WINDOW_MS, LOCK_MS)
+    if (!acct.allowed) {
+      // пароль не проверялся — попытка по паре логин+IP не сгорает
+      await releaseHit(userKey)
+      return tooMany(acct.retryAfterSec)
     }
 
-    const user = await db.staffUser.findUnique({ where: { login: key } })
-    if (!user || !user.active || !(await verifyPassword(String(password), user.passwordHash))) {
+    // Сбой БД/хэширования до результата проверки пароля: ответа «верно/неверно» не было,
+    // поэтому резерв возвращается — пять сбоев подряд не блокируют сотрудника на 15 минут.
+    // После того как результат проверки известен, резерв уже не возвращается (иначе ошибка в аудите
+    // или ниже давала бы бесплатные попытки подбора).
+    let user: Awaited<ReturnType<typeof db.staffUser.findUnique>>
+    let passwordOk: boolean
+    try {
+      user = await db.staffUser.findUnique({ where: { login: key } })
+      passwordOk = !!user && user.active && (await verifyPassword(String(password), user.passwordHash))
+    } catch (e) {
+      await releaseHit(userKey).catch(() => {})
+      await releaseHit(acctKey).catch(() => {})
+      throw e
+    }
+    if (!user || !passwordOk) {
+      // acctKey уже засчитан резервом выше — второй раз не считаем
       await hit(ipKey, IP_LIMIT, WINDOW_MS, LOCK_MS)
-      await hit(acctKey, ACCOUNT_LIMIT, WINDOW_MS, LOCK_MS)
       await audit('auth.login_failed', user?.id ?? null, { login: key, ip })
       return NextResponse.json({ error: 'Неверный логин или пароль' }, { status: 401 })
     }
     await resetLimit(userKey)
+    // Успех не считается попыткой подбора: возвращаем только СВОЙ резерв по логину. Счётчик целиком
+    // не обнуляем — иначе вход настоящего сотрудника стирал бы неудачи распределённого подбора.
+    await releaseHit(acctKey)
 
     const needs2fa = user.totpEnabled || twoFaRoles().includes(user.role)
     if (needs2fa) {

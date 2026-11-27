@@ -27,6 +27,7 @@ import { api } from '@/lib/api'
 import { Me, can } from '@/lib/rbac'
 import { buildReceipt } from '@/lib/receipt'
 import { usePublicConfig } from '@/lib/use-public-config'
+import { FISCAL_NOT_REQUIRED, refundPlan, refundToast } from '@/lib/refund-policy'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { CashSummary, FISCAL_LABELS, PatientLite, PAYMENT_METHOD_LABELS, PaymentDTO, ServiceDTO } from '@/lib/types'
 import { ddmmyyyy, timeStr } from '@/lib/mis-utils'
@@ -258,8 +259,11 @@ export default function Cash({ me }: Props) {
   const doRefund = async () => {
     if (!refundTarget) return
     try {
-      await api(`/api/payments/${refundTarget.id}`, { method: 'PATCH', body: JSON.stringify({ action: 'refund' }) })
-      toast.success(`Возврат ${refundTarget.amount} ₽ оформлен, чек возврата выдан`)
+      const r = await api<{ refund: { fiscalStatus: string } | null; fiscalNote: string | null }>(`/api/payments/${refundTarget.id}`, { method: 'PATCH', body: JSON.stringify({ action: 'refund' }) })
+      // текст — по фактическому статусу чека возврата: выдан / ждёт кассы / без чека (внешняя ККТ)
+      const msg = refundToast(refundTarget.amount, r.refund?.fiscalStatus, r.fiscalNote)
+      if (r.refund?.fiscalStatus === 'ISSUED' || r.refund?.fiscalStatus === FISCAL_NOT_REQUIRED) toast.success(msg)
+      else toast.warning(msg)
       setRefundTarget(null)
       load()
     } catch (e) {
@@ -448,7 +452,8 @@ export default function Cash({ me }: Props) {
             {refundTarget && (
               <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
                 <span className="text-sm text-rose-700">
-                  Подтвердите возврат {rub(refundTarget.amount)} по оплате пациента {refundTarget.patientName} — будет сформирован чек возврата.
+                  Подтвердите возврат {rub(refundTarget.amount)} по оплате пациента {refundTarget.patientName} —{' '}
+                  {refundTarget.fiscalStatus === 'ISSUED' ? 'будет сформирован чек возврата.' : 'возврат оформляется записью, чек возврата пробейте на внешней ККТ.'}
                 </span>
                 <div className="flex gap-2 shrink-0">
                   <Button size="sm" className="h-8 bg-rose-600 hover:bg-rose-700" onClick={doRefund}>
@@ -524,8 +529,11 @@ export default function Cash({ me }: Props) {
                             <XCircle className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {canRefund && p.type === 'PAYMENT' && p.status === 'PAID' && p.fiscalStatus === 'ISSUED' && !p.refunded && (
-                          <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-rose-600 border-rose-200 hover:bg-rose-50" title="Возврат с чеком возврата" aria-label={`Возврат: ${p.patientName}`} onClick={() => setRefundTarget(p)}>
+                        {canRefund && p.type === 'PAYMENT' && p.status === 'PAID' && !p.refunded && cfg && (() => {
+                          const plan = refundPlan(p.fiscalStatus, fiscalOk, me.mode === 'demo')
+                          return plan.ok && (p.fiscalStatus === 'ISSUED' || plan.journal)
+                        })() && (
+                          <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-rose-600 border-rose-200 hover:bg-rose-50" title={p.fiscalStatus === 'ISSUED' ? 'Возврат с чеком возврата' : 'Возврат записью (чек возврата — на внешней ККТ)'} aria-label={`Возврат: ${p.patientName}`} onClick={() => setRefundTarget(p)}>
                             <Undo2 className="h-3.5 w-3.5" />
                           </Button>
                         )}

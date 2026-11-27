@@ -5,7 +5,7 @@ import { audit, requirePerm } from '@/lib/auth-server'
 import { isDemo } from '@/lib/config'
 import { FiscalError, fiscalizePayment } from '@/lib/fiscal-queue'
 import { fiscalStatus } from '@/lib/fiscal'
-import { refundRequiresIssuedReceipt } from '@/lib/cash'
+import { FISCAL_NOT_REQUIRED, refundPlan } from '@/lib/refund-policy'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,19 +58,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (payment.refunds.length > 0) {
         return NextResponse.json({ error: 'Возврат по этой оплате уже оформлен' }, { status: 409 })
       }
-      // Чек возврата прихода — только к пробитому чеку прихода (54-ФЗ)
-      const needIssued = refundRequiresIssuedReceipt(fiscalStatus().configured, isDemo())
-      if (needIssued && payment.fiscalStatus !== 'ISSUED') {
-        const msg = payment.fiscalStatus === 'PENDING'
-          ? 'Чек по оплате ещё в кассе — дождитесь результата, затем оформляйте возврат'
-          : 'Чек по оплате не пробит — возврат невозможен. Отмените оплату (действие «Отменить»), она не уйдёт в кассу'
-        return NextResponse.json({ error: msg, code: 'NOT_FISCALIZED' }, { status: 409 })
-      }
+      // Чек возврата прихода — только к пробитому чеку прихода (54-ФЗ); без провайдера — возврат записью
+      // только по QUEUED (чек на внешней ККТ), PENDING/ERROR — отказ (см. refundPlan)
+      const plan = refundPlan(payment.fiscalStatus, fiscalStatus().configured, isDemo())
+      if (!plan.ok) return NextResponse.json({ error: plan.message, code: plan.code }, { status: 409 })
+      const journal = plan.journal
       let refund
       try {
         refund = await db.$transaction(async (tx) => {
           // смена статуса и создание возврата — одной транзакцией; условие на статус — защита от гонки
-          const upd = await tx.payment.updateMany({ where: { id, type: 'PAYMENT', status: 'PAID', ...(needIssued ? { fiscalStatus: 'ISSUED' } : {}) }, data: { status: 'CANCELED' } })
+          // фиксируем ожидаемый статус фискализации: параллельная фискализация/смена статуса не пройдёт updateMany
+          const upd = await tx.payment.updateMany({
+            where: { id, type: 'PAYMENT', status: 'PAID', fiscalStatus: plan.expectFiscalStatus },
+            // возврат записью: исходная оплата больше не «в очереди» кассы (чек был на внешней ККТ)
+            data: journal ? { status: 'CANCELED', fiscalStatus: FISCAL_NOT_REQUIRED } : { status: 'CANCELED' },
+          })
           if (upd.count !== 1) throw new RefundRace()
           return tx.payment.create({
             data: {
@@ -80,7 +82,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
               method: payment.method,
               type: 'REFUND',
               status: 'PAID',
-              fiscalStatus: 'QUEUED',
+              // возврат записью не уходит в онлайн-кассу как sell_refund (продажи в ней не было)
+              fiscalStatus: journal ? FISCAL_NOT_REQUIRED : 'QUEUED',
               itemsJson: payment.itemsJson,
               note: `Возврат по оплате ${payment.id.slice(-8).toUpperCase()}`,
               refundOfId: payment.id,
@@ -89,16 +92,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           })
         })
       } catch (e) {
-        if (e instanceof RefundRace || (e as { code?: string }).code === 'P2002') {
+        if ((e as { code?: string }).code === 'P2002') {
           return NextResponse.json({ error: 'Возврат по этой оплате уже оформлен' }, { status: 409 })
+        }
+        if (e instanceof RefundRace) {
+          return NextResponse.json({ error: 'Возврат по этой оплате уже оформлен или статус чека изменился — обновите кассу' }, { status: 409 })
         }
         throw e
       }
-      await audit('payment.refunded', g.user.id, { paymentId: id, refundId: refund.id, amount: payment.amount })
+      await audit('payment.refunded', g.user.id, { paymentId: id, refundId: refund.id, amount: payment.amount, journal })
       // Чек возврата прихода: сразу в кассу, если она настроена (в демо — имитация);
       // иначе возврат остаётся «не фискализирован» и касса показывает предупреждение
       let fiscalNote: string | null = null
-      if (isDemo() || fiscalStatus().configured) {
+      if (journal) {
+        fiscalNote = 'Возврат оформлен записью без чека МИС — пробейте чек возврата на внешней ККТ'
+      } else if (isDemo() || fiscalStatus().configured) {
         try {
           await fiscalizePayment(refund.id, g.user.name)
         } catch (e) {
@@ -108,7 +116,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         fiscalNote = fiscalStatus().problem
       }
       const fresh = await db.payment.findUnique({ where: { id: refund.id } })
-      return NextResponse.json({ refund: fresh, fiscalNote }, { status: 201 })
+      return NextResponse.json({ refund: fresh, fiscalNote, journal }, { status: 201 })
     }
 
     return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 })

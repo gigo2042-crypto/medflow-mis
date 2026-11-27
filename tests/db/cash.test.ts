@@ -207,3 +207,67 @@ describe('лимит скидки и подтверждение админист
     expect((await pay(reg.cookie, { patientId: patient.id, amount: 1000, discount: 1 })).status).toBe(403)
   })
 })
+
+// Ревью ocr (находки 2, 3, 5, 6): возврат записью без провайдера — статусы, метрики, гонка, очередь АТОЛ.
+describe('возврат записью без провайдера (внешняя ККТ)', () => {
+  it('QUEUED → 201, journal; оригинал и возврат NOT_REQUIRED; в metrics не считаются очередью кассы', async () => {
+    const { patient, reg, admin } = await setup()
+    const p = (await pay(reg.cookie, { patientId: patient.id, amount: 1000 })).json.payment
+    const r = await patch(admin.cookie, p.id, 'refund')
+    expect(r.status).toBe(201)
+    expect(r.json.journal).toBe(true)
+    expect(r.json.refund.fiscalStatus).toBe('NOT_REQUIRED')
+    expect(r.json.fiscalNote).toMatch(/внешней ККТ/)
+    expect(await db.payment.findUniqueOrThrow({ where: { id: p.id } })).toMatchObject({ status: 'CANCELED', fiscalStatus: 'NOT_REQUIRED' })
+    const { collectMetrics } = await import('@/lib/metrics')
+    const m = await collectMetrics()
+    expect(m).toMatch(/medflow_fiscal_payments\{status="QUEUED"\} 0/)
+    expect(m).not.toMatch(/NOT_REQUIRED/)
+  })
+  it('PENDING и ERROR → 409, возврат не создаётся; ISSUED (касса была раньше) → обычный возврат QUEUED', async () => {
+    const { patient, reg, admin } = await setup()
+    const p = (await pay(reg.cookie, { patientId: patient.id, amount: 1000 })).json.payment
+    for (const fs of ['PENDING', 'ERROR']) {
+      await db.payment.update({ where: { id: p.id }, data: { fiscalStatus: fs } })
+      const r = await patch(admin.cookie, p.id, 'refund')
+      expect(r.status).toBe(409)
+      expect(r.json.code).toBe('NOT_FISCALIZED')
+    }
+    expect(await db.payment.count({ where: { type: 'REFUND' } })).toBe(0)
+    await db.payment.update({ where: { id: p.id }, data: { fiscalStatus: 'ISSUED', fiscalNumber: 'ФН-ТЕСТ' } })
+    const ok = await patch(admin.cookie, p.id, 'refund')
+    expect(ok.status).toBe(201)
+    expect(ok.json.journal).toBe(false)
+    expect(ok.json.refund.fiscalStatus).toBe('QUEUED')
+  })
+  it('гонка: статус сменился на PENDING после чтения → updateMany с ожидаемым QUEUED не проходит, 409, возврата нет', async () => {
+    const { patient, reg, admin } = await setup()
+    const p = (await pay(reg.cookie, { patientId: patient.id, amount: 1000 })).json.payment
+    const stale = await db.payment.findUniqueOrThrow({ where: { id: p.id }, include: { refunds: true } })
+    await db.payment.update({ where: { id: p.id }, data: { fiscalStatus: 'PENDING' } }) // чек ушёл в кассу параллельно
+    const { db: appDb } = await import('@/lib/db')
+    vi.spyOn(appDb.payment, 'findUnique').mockResolvedValueOnce(stale as never)
+    const r = await patch(admin.cookie, p.id, 'refund')
+    expect(r.status).toBe(409)
+    expect(await db.payment.count({ where: { type: 'REFUND' } })).toBe(0)
+    expect(await db.payment.findUniqueOrThrow({ where: { id: p.id } })).toMatchObject({ status: 'PAID', fiscalStatus: 'PENDING' })
+  })
+  it('после подключения АТОЛ возврат записью не уходит как sell_refund; REFUND к непробитой продаже — тоже нет', async () => {
+    const { patient, reg, admin } = await setup()
+    const p = (await pay(reg.cookie, { patientId: patient.id, amount: 1000 })).json.payment
+    const r = await patch(admin.cookie, p.id, 'refund')
+    expect(r.status).toBe(201)
+    productionEnv(ATOL_CONNECTED)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const f = await patch(admin.cookie, r.json.refund.id, 'fiscalize')
+    expect(f.status).toBe(409)
+    // вручную созданный QUEUED-возврат к непробитой (QUEUED) продаже
+    const p2 = (await pay(reg.cookie, { patientId: patient.id, amount: 700 })).json.payment
+    const bad = await db.payment.create({ data: { patientId: patient.id, amount: -700, method: 'CASH', type: 'REFUND', status: 'PAID', fiscalStatus: 'QUEUED', refundOfId: p2.id } })
+    const f2 = await patch(admin.cookie, bad.id, 'fiscalize')
+    expect(f2.status).toBe(409)
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect((await db.payment.findUniqueOrThrow({ where: { id: r.json.refund.id } })).fiscalStatus).toBe('NOT_REQUIRED')
+    expect((await db.payment.findUniqueOrThrow({ where: { id: bad.id } })).fiscalStatus).toBe('QUEUED')
+  })
+})

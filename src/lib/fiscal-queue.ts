@@ -3,6 +3,7 @@
 // Серверный модуль — не импортировать в клиентский код!
 import { db } from '@/lib/db'
 import { isDemo } from '@/lib/config'
+import { FISCAL_NOT_REQUIRED } from '@/lib/refund-policy'
 import { FiscalNotConfiguredError, fetchReport, fiscalStatus, sendReceipt } from '@/lib/fiscal'
 
 function demoNumber(): string {
@@ -30,7 +31,12 @@ export async function fiscalizePayment(paymentId: string, cashierName?: string |
   const p = await db.payment.findUnique({ where: { id: paymentId }, include: { patient: true, refundOf: true } })
   if (!p) throw new FiscalError('Оплата не найдена', 'NOT_FOUND', 404)
   if (p.status === 'CANCELED' && p.type === 'PAYMENT' && p.fiscalStatus !== 'ISSUED') throw new FiscalError('Оплата отменена — чек не пробивается', 'CANCELED', 409)
+  if (p.fiscalStatus === FISCAL_NOT_REQUIRED) throw new FiscalError('Возврат оформлен записью (внешняя ККТ) — чек в онлайн-кассу не отправляется', 'NOT_REQUIRED', 409)
   if (!['QUEUED', 'ERROR'].includes(p.fiscalStatus)) throw new FiscalError('Чек по оплате уже отправлен или выдан', 'ALREADY', 409)
+  // Чек возврата прихода (sell_refund) — только к чеку прихода, пробитому в этой онлайн-кассе (54-ФЗ)
+  if (p.type === 'REFUND' && p.refundOf?.fiscalStatus !== 'ISSUED') {
+    throw new FiscalError('Чек прихода по этой оплате не пробит в онлайн-кассе — чек возврата отправить нельзя', 'SALE_NOT_ISSUED', 409)
+  }
   const st = fiscalStatus()
   if (!isDemo() && !st.configured) throw new FiscalError(st.problem || 'Онлайн-касса не настроена', 'FISCAL_NOT_CONFIGURED', 409)
   // Атомарный захват: два одновременных «Фискализировать» или фискализация параллельно с отменой

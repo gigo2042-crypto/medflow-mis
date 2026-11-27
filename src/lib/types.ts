@@ -201,6 +201,7 @@ export const FISCAL_LABELS: Record<string, string> = {
   ERROR: 'Ошибка кассы',
   FAILED: 'Ошибка ОФД',
   CANCELED: 'Отменена, чек не пробит',
+  NOT_REQUIRED: 'Без чека МИС (внешняя ККТ)',
 }
 
 export interface DocTemplateDTO {

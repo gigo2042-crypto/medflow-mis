@@ -55,6 +55,19 @@ export async function hit(key: string, limit: number, windowMs: number, lockMs: 
   return { allowed: true, retryAfterSec: 0 }
 }
 
+/**
+ * Вернуть ОДНО ранее засчитанное событие (резерв попытки, по которой результат так и не был получен:
+ * сбой БД до/во время проверки пароля; успешный вход по глобальному счётчику логина).
+ * Атомарно, не уходит ниже нуля и НЕ снимает уже стоящую блокировку — в отличие от resetLimit,
+ * не стирает чужие неудачи по тому же ключу.
+ */
+export async function releaseHit(key: string): Promise<void> {
+  const nowIso = new Date().toISOString()
+  await db.$executeRaw`
+    UPDATE "RateLimit" SET "count" = GREATEST("count" - 1, 0)
+    WHERE "key" = ${key} AND ("lockedUntil" IS NULL OR "lockedUntil" <= ${nowIso}::timestamp)`
+}
+
 export async function resetLimit(key: string): Promise<void> {
   await db.rateLimit.deleteMany({ where: { key } })
 }
