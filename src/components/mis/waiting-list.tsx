@@ -1,7 +1,7 @@
 // © 2026 Tony Genenncher. Все права защищены. Исходный код доступен только для просмотра — см. LICENSE.
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -183,12 +183,16 @@ export default function WaitingList({ me }: { me: Me }) {
     setBookSlots(null)
   }
 
+  // номер последнего запроса слотов: ответ на устаревший запрос (другой день/врач) не применяется
+  const bookReq = useRef(0)
   const loadBookSlots = useCallback(async (doctorId: string, dayOffset: number, entry: WaitingEntryDTO | null) => {
     if (!doctorId || !entry) return
+    const req = ++bookReq.current
     const dKey = addDaysKey(todayKey(), dayOffset)
     const d = clinicDayStart(dayOffset)
     try {
       const data = await api<{ schedules: DoctorSchedule[] }>(`/api/schedule?date=${dKey}`)
+      if (req !== bookReq.current) return
       const sch = data.schedules.find((s) => s.id === doctorId)
       if (!sch) {
         setBookSlots([])
@@ -205,12 +209,16 @@ export default function WaitingList({ me }: { me: Me }) {
       })
       setBookSlots(matching)
     } catch (err) {
+      if (req !== bookReq.current) return
       toast.error((err as Error).message)
       setBookSlots([])
     }
   }, [])
 
   useEffect(() => {
+    // смена дня/врача: слот, выбранный раньше, к новому списку не относится
+    setBookStart(null)
+    setBookSlots(null)
     if (bookingEntry) loadBookSlots(bookDoctorId || bookingEntry.doctorId || '', bookDayOffset, bookingEntry)
   }, [bookingEntry, bookDoctorId, bookDayOffset, loadBookSlots])
 
