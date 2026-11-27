@@ -6,7 +6,7 @@ import { decodeFlowCookie, encodeFlowCookie, groupsFrom, hasMfa, mapGroupsToRole
 process.env.SESSION_SECRET = 'test-session-secret-0123456789-abcdefgh'
 const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const now = () => Math.floor(Date.now() / 1000)
-const base = { iss: 'https://idp.test', aud: 'medflow', sub: 'u1', nonce: 'n1', exp: now() + 300 }
+const base = { iss: 'https://idp.test', aud: 'medflow', sub: 'u1', nonce: 'n1', exp: now() + 300, iat: now() }
 const exp = { issuer: 'https://idp.test', clientId: 'medflow', nonce: 'n1', clientSecret: 'fake-client-secret-123' }
 function hs(claims: object, secret = exp.clientSecret) {
   const h = b64({ alg: 'HS256', typ: 'JWT' })
@@ -41,6 +41,16 @@ describe('OIDC', () => {
     expect(() => verifyIdToken(hs({ ...base, aud: 'other' }), exp)).toThrow(/audience/)
     expect(() => verifyIdToken(hs({ ...base, nonce: 'x' }), exp)).toThrow(/nonce/)
     expect(() => verifyIdToken(hs({ ...base, exp: now() - 600 }), exp)).toThrow(/истёк/)
+  })
+  it('id_token: обычный iat принимается', () => {
+    expect(verifyIdToken(hs({ ...base, iat: now() }), exp).sub).toBe('u1')
+  })
+  it('id_token: iat в будущем отвергается', () => {
+    expect(() => verifyIdToken(hs({ ...base, iat: now() + 120 }), exp)).toThrow(/iat в будущем/)
+  })
+  it('id_token: без iat отвергается', () => {
+    const { iat: _iat, ...noIat } = base
+    expect(() => verifyIdToken(hs(noIat), exp)).toThrow(/нет iat/)
   })
   it('id_token RS256 проверяется по JWKS', () => {
     const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })

@@ -81,10 +81,16 @@ dump() {
   (cd "$DIR" && sha256sum "$name" > "$name.sha256")
   echo "[backup] OK $DIR/$name ($(wc -c < "$DIR/$name") байт)"
   if [ -n "${BACKUP_S3_BUCKET:-}" ]; then
-    ep=""; [ -n "${BACKUP_S3_ENDPOINT:-}" ] && ep="--endpoint-url $BACKUP_S3_ENDPOINT"
-    # shellcheck disable=SC2086
-    if aws $ep s3 cp "$DIR/$name" "${BACKUP_S3_BUCKET%/}/$name" --only-show-errors \
-      && aws $ep s3 cp "$DIR/$name.sha256" "${BACKUP_S3_BUCKET%/}/$name.sha256" --only-show-errors; then
+    # Без word-splitting: скрипт — POSIX sh (Alpine /bin/sh в backup.Dockerfile, тесты зовут sh).
+    aws_s3() {
+      if [ -n "${BACKUP_S3_ENDPOINT:-}" ]; then
+        aws --endpoint-url "$BACKUP_S3_ENDPOINT" "$@"
+      else
+        aws "$@"
+      fi
+    }
+    if aws_s3 s3 cp "$DIR/$name" "${BACKUP_S3_BUCKET%/}/$name" --only-show-errors \
+      && aws_s3 s3 cp "$DIR/$name.sha256" "${BACKUP_S3_BUCKET%/}/$name.sha256" --only-show-errors; then
       echo "[backup] S3 OK ${BACKUP_S3_BUCKET%/}/$name"
     else
       echo "[backup] ОШИБКА выгрузки в S3 (локальная копия сохранена)" >&2; return 1

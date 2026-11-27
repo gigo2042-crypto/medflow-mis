@@ -174,6 +174,8 @@ export function verifyIdToken(
   const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud]
   if (!aud.includes(expected.clientId)) throw new Error('id_token: чужая audience')
   if (!claims.exp || claims.exp * 1000 < Date.now() - 60_000) throw new Error('id_token: истёк')
+  if (typeof claims.iat !== 'number' || !Number.isFinite(claims.iat)) throw new Error('id_token: нет iat')
+  if (claims.iat * 1000 > Date.now() + 60_000) throw new Error('id_token: iat в будущем')
   if (!claims.nonce || !safeEqual(claims.nonce, expected.nonce)) throw new Error('id_token: nonce не совпал')
   if (!claims.sub) throw new Error('id_token: нет sub')
   return claims
